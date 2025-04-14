@@ -1,1 +1,58 @@
-title: 'Market-Based Pricing Display'\ndescription: 'Injects Market Based Price and Save $X info into DDC SRP cards using HomeNet data cached in Upstash Redis.'\nicon: 'tag'\n---\n\n> Dynamically inject "Market Based Price" and "Save $X" UI elements into vehicle cards on the Search Results Page (SRP) of a Dealer.com website, based on real-time MSRP data from HomeNet and cached in Upstash Redis.\n\n## Overview\n\nThis script enhances SRP listings by displaying market-based pricing and potential customer savings. It listens for vehicle data events via Dealer.com’s API, fetches MSRP data for used vehicles from a serverless API, and injects UI elements with mobile-friendly formatting.\n\n## Dependencies\n\n### Dealer.com JavaScript API\n\nUsed to interact with the vehicle data and lifecycle events on the SRP.\n\n- Subscribe to page load and vehicle update events\n- Retrieve vehicle attributes like VIN, inventory type, and pricing\n- Inject DOM elements into vehicle listing cards\n\nExample methods:\n\njs\nAPI.subscribe('page-load-v1', ...)\nAPI.utils.getAttributeForVehicles('vin')\nAPI.insertOnce('vehicle-payments', ...)\n\n\n### Middleware API (Hosted on Vercel)\n\nA custom serverless function that:\n\n- Accepts a comma-separated list of VINs\n- Returns [{ vin, msrp }]\n- Is backed by the HomeNet API and cached in Redis\n\nExample endpoint:\n\n\nhttps://cors-rosy.vercel.app/api/srp-garber-buick-gmc-market-value?vin=VIN1,VIN2,...\n\n\n### HomeNet API\n\nThe internal data source that powers your market value API.\n\n- Returns compressed XML vehicle inventory data\n- Endpoint filters by used inventory and returns fields like vin and msrp\n\nExample (internal use only):\n\n\nhttps://services.homenetiol.com/Gateway.asmx/LoadCompressedVehicles?IntegrationToken=...&InventoryFilter=type='USED'\n\n\n### Upstash Redis (Cloud KV Store)\n\nUsed to cache the entire USED vehicle inventory (vin + msrp) for 6 hours to minimize repeated HomeNet API calls.\n\nExample caching logic:\n\nts\nawait redis.set('homenet:used:all', allVehicles, { ex: 21600 }); // 6 hours\n\n\n## How It Works\n\n1. Wait for SRP to Load\n\n Listens for page-load-v1 and ensures the user is on a searchPage.\n\n2. Get All Used VINs\n\n Collects all VINs where inventory type is used.\n\n3. Call Market Value API\n\n Sends the VINs to your middleware function.\n\n4. Receive MSRP Data\n\n Gets back an array of { vin, msrp } and builds a vin \u2192 msrp map.\n\n5. Inject UI Elements\n\n - Calculates savings = msrp - finalPrice\n - Injects:\n - “Market Based Price” label with strikethrough MSRP\n - “Save $X” badge in green\n\n## Example HTML Injected\n\nhtml\n<div class=\"market-pricing-info\">\n <div>\n <span style=\"color: #c00;\">Market Based Price:</span>\n <span style=\"color: #c00; text-decoration: line-through;\"> $27,990</span>\n </div>\n <div style=\"background: #28a745; color: white; font-size: 10px; border-radius: 12px; padding: 2px 8px;\">\n Save $2,000\n </div>\n</div>\n\n\n## Styles Used\n\n### Container\n\ncss\ndisplay: flex;\njustify-content: space-between;\nalign-items: center;\nfont-size: 13px;\npadding: 4px 8px;\nborder-radius: 6px;\nbackground-color: #f9f9f9;\nflex-wrap: nowrap;\ngap: 8px;\n\n\n### Savings Pill\n\ncss\nbackground-color: #28a745;\ncolor: white;\nfont-size: 10px;\nborder-radius: 12px;\npadding: 2px 8px;\nwhite-space: nowrap;\nmargin-left: auto;\n\n\n## Error Handling\n\nIf there's an issue fetching the data, it fails silently and logs to the console.\n\njs\nconsole.error('Error fetching market value data:', error);\n\n\n## Customization Options\n\n| Feature | Description |\n|---------------------|-------------------------------------------------|\n| cacheTTL | 6 hours via Redis (adjustable in seconds) |\n| API fields | You can return more than just vin and msrp |\n| style | Mobile-first layout and pill badge styling |\n| logic | Only shows if msrp > finalPrice |\n\n## Future Enhancements\n\n- Add discount percentages\n- Add deal status (e.g. “Great Deal”, “Fair Deal”)\n- Preload data via CRON job\n- Support multi-rooftop VIN lookups\n\n---\n\nLet me know if you'd like to package this as a widget, extend it to all rooftops, or display more metrics like sale price comparisons or internet specials.\n"
+---
+title: 'Market-Based Pricing Display'
+description: 'Injects Market Based Price and Save $X into Dealer.com SRP listings using data from HomeNet, cached via Upstash Redis.'
+icon: 'tag'
+---
+
+## Overview
+
+Enhance your dealership SRP listings by automatically injecting market-based pricing and savings indicators using real-time MSRP data.
+
+<AccordionGroup>
+
+<Accordion icon="cog" title="What the Script Does">
+  This JavaScript enhancement script:
+  - Hooks into the Dealer.com SRP lifecycle using `window.DDC`
+  - Gathers all `USED` VINs on the page
+  - Calls a serverless API to retrieve MSRP values
+  - Injects a styled badge showing “Market Based Price” and “Save $X” if applicable
+</Accordion>
+
+<Accordion icon="database" title="Backend Overview">
+  The backend API:
+  - Uses HomeNet’s `LoadCompressedVehicles` endpoint
+  - Filters for all `USED` inventory at a specific rooftop
+  - Caches results in [Upstash Redis](https://upstash.com/) for 6 hours
+  - Filters results server-side to return only relevant VINs
+</Accordion>
+
+<Accordion icon="code" title="Tech Stack + Services">
+  - **Dealer.com DDC API** – Client-side integration and event lifecycle
+  - **HomeNet API** – Vehicle data source (returns compressed XML)
+  - **Upstash Redis** – 6-hour caching for reduced API traffic
+  - **Vercel Edge Functions** – Hosting for your VIN-based API handler
+</Accordion>
+
+</AccordionGroup>
+
+## Key Script Behavior
+
+1. Waits for `page-load-v1` on the SRP.
+2. Collects all `used` VINs using `API.utils.getAttributeForVehicles('vin')`.
+3. Makes an API call to your VIN MSRP endpoint:
+4. Displays:
+- A strikethrough MSRP ("Market Based Price")
+- A green badge (`Save $X`) if `msrp > finalPrice`
+
+## UI Injection Example
+
+```html
+<div class="market-pricing-info">
+<div>
+ <span style="color: #c00;">Market Based Price:</span>
+ <span style="color: #c00; text-decoration: line-through;"> $27,990</span>
+</div>
+<div style="background: #28a745; color: white; font-size: 10px; border-radius: 12px; padding: 2px 8px;">
+ Save $2,000
+</div>
+</div>
