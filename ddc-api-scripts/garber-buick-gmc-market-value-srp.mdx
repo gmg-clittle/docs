@@ -1,58 +1,120 @@
 ---
-title: 'Market-Based Pricing Display'
-description: 'Injects Market Based Price and Save $X into Dealer.com SRP listings using data from HomeNet, cached via Upstash Redis.'
-icon: 'tag'
+title: Market Value Savings Widget
+description: Injects MSRP and savings data for used vehicles on SRPs using Dealer.com API and external pricing API.
 ---
 
-## Overview
+import CodeBlock from '@theme/CodeBlock';
 
-Enhance your dealership SRP listings by automatically injecting market-based pricing and savings indicators using real-time MSRP data.
+# Market Value Savings Widget
 
-<AccordionGroup>
+This script dynamically injects a "Market Based Price" and savings pill for used vehicles on the Search Results Page (SRP), powered by a remote API that provides MSRP values.
 
-<Accordion icon="cog" title="What the Script Does">
-  This JavaScript enhancement script:
-  - Hooks into the Dealer.com SRP lifecycle using `window.DDC`
-  - Gathers all `USED` VINs on the page
-  - Calls a serverless API to retrieve MSRP values
-  - Injects a styled badge showing “Market Based Price” and “Save $X” if applicable
-</Accordion>
+## How It Works
 
-<Accordion icon="database" title="Backend Overview">
-  The backend API:
-  - Uses HomeNet’s `LoadCompressedVehicles` endpoint
-  - Filters for all `USED` inventory at a specific rooftop
-  - Caches results in [Upstash Redis](https://upstash.com/) for 6 hours
-  - Filters results server-side to return only relevant VINs
-</Accordion>
+- Listens for the `page-load-v1` event to confirm you're on the SRP.
+- Subscribes to `vehicle-data-updated-v1` to react to inventory data availability.
+- Fetches VINs and inventory types, filtering only `used` vehicles.
+- Calls a remote API for MSRP values.
+- Injects a pricing banner showing MSRP and calculated savings below each vehicle with valid pricing data.
 
-<Accordion icon="code" title="Tech Stack + Services">
-  - **Dealer.com DDC API** – Client-side integration and event lifecycle
-  - **HomeNet API** – Vehicle data source (returns compressed XML)
-  - **Upstash Redis** – 6-hour caching for reduced API traffic
-  - **Vercel Edge Functions** – Hosting for your VIN-based API handler
-</Accordion>
+## Script
 
-</AccordionGroup>
+<CodeBlock language="javascript">
 
-## Key Script Behavior
+(async APILoader => {
+  const API = await APILoader.create();
 
-1. Waits for `page-load-v1` on the SRP.
-2. Collects all `used` VINs using `API.utils.getAttributeForVehicles('vin')`.
-3. Makes an API call to your VIN MSRP endpoint:
-4. Displays:
-- A strikethrough MSRP ("Market Based Price")
-- A green badge (`Save $X`) if `msrp > finalPrice`
+  API.subscribe('page-load-v1', event => {
+    if (!event.payload.searchPage) return;
 
-## UI Injection Example
+    API.subscribe('vehicle-data-updated-v1', async () => {
+      const vins = await API.utils.getAttributeForVehicles('vin');
+      const types = await API.utils.getAttributeForVehicles('inventoryType');
+      const usedVins = vins.filter((_, i) => types[i] === 'used');
 
-```html
-<div class="market-pricing-info">
-<div>
- <span style="color: #c00;">Market Based Price:</span>
- <span style="color: #c00; text-decoration: line-through;"> $27,990</span>
-</div>
-<div style="background: #28a745; color: white; font-size: 10px; border-radius: 12px; padding: 2px 8px;">
- Save $2,000
-</div>
-</div>
+      if (!usedVins.length) return;
+
+      try {
+        const response = await fetch(
+          \`https://cors-rosy.vercel.app/api/srp-garber-buick-gmc-market-value?vin=\${usedVins.join(',')}\`
+        );
+        const marketData = await response.json();
+        const marketMap = Object.fromEntries(marketData.map(v => [v.vin, v.msrp]));
+
+        API.insertOnce('vehicle-payments', (elem, meta) => {
+          const vin = meta.vin;
+          const msrp = parseFloat(marketMap[vin]);
+          const finalPrice = parseFloat(meta.finalPrice);
+
+          if (!vin || !msrp || !finalPrice || isNaN(msrp) || isNaN(finalPrice)) return;
+
+          const savings = msrp - finalPrice;
+          if (savings <= 0) return;
+
+          const formattedMsrp = \`$\${msrp.toLocaleString()}\`;
+          const formattedSavings = \`$\${savings.toLocaleString()}\`;
+
+          const container = document.createElement('div');
+          container.className = 'market-pricing-info';
+          container.style.cssText = \`
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-family: Inter, sans-serif;
+            font-size: 13px;
+            font-weight: 500;
+            width: 100%;
+            background-color: #f9f9f9;
+            padding: 4px 8px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            flex-wrap: nowrap;
+            gap: 8px;
+          \`;
+
+          const priceLine = document.createElement('div');
+          priceLine.innerHTML = \`
+            <span style="color: #c00;">Market Based Price:</span>
+            <span style="color: #c00; text-decoration: line-through;"> \${formattedMsrp}</span>
+          \`;
+
+          const savingsPill = document.createElement('div');
+          savingsPill.innerText = \`Save \${formattedSavings}\`;
+          savingsPill.style.cssText = \`
+            background-color: #28a745;
+            color: white;
+            font-weight: 500;
+            font-size: 10px;
+            border-radius: 12px;
+            padding: 2px 8px;
+            white-space: nowrap;
+            margin-left: auto;
+          \`;
+
+          container.appendChild(priceLine);
+          container.appendChild(savingsPill);
+          API.append(elem, container);
+        });
+      } catch (error) {
+        console.error('Error fetching market value data:', error);
+      }
+    });
+  });
+})(window.DDC.APILoader);
+
+</CodeBlock>
+
+## Styling Output
+
+- **Market Based Price** is shown in red with a line-through.
+- **Savings Pill** appears as a green pill indicating the amount saved off MSRP.
+
+## Requirements
+
+- Must be embedded on Dealer.com SRP.
+- External API must support VIN-based MSRP lookups.
+- Final price must be accessible via `meta.finalPrice`.
+
+---
+
+For advanced customization, consider adding additional styles, fallback logic, or MSRP label translations.
