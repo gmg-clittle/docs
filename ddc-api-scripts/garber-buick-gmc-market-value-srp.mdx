@@ -1,6 +1,6 @@
 ---
-title: Market Value Pricing Integration
-description: Documentation for the Dealer.com market-based pricing injection and API endpoint used to retrieve MSRP values from HomeNet via Redis caching.
+title: "Market Value Pricing Integration"
+description: "Documentation for the Dealer.com market-based pricing injection and API endpoint used to retrieve MSRP values from HomeNet via Redis caching."
 ---
 
 # Market-Based Pricing Widget (Used Vehicles)
@@ -12,8 +12,8 @@ This tool injects **market-based MSRP values** for used vehicles on the Search R
 ## 🔁 Workflow Overview
 
 1. **Script loads on SRP** → Listens to inventory events from Dealer.com API.
-2. **Filters `used` vehicles** and gathers their VINs.
-3. **Calls your custom API** at [`/api/srp-garber-buick-gmc-market-value`](#api-endpoint-details) with those VINs.
+2. **Filters  vehicles** and gathers their VINs.
+3. **Calls your custom API** at  with those VINs.
 4. **Displays**:
    - MSRP (crossed out)
    - Savings pill (`Save $X,XXX`)
@@ -32,7 +32,7 @@ It performs the following:
   - Market Based Price (MSRP)
   - Savings calculated from MSRP - Final Price
 
-> ✅ **View full script in** [`vehicle-market-value-injector.js`](./vehicle-market-value-injector.js)
+> ✅ **View full script in** 
 
 ---
 
@@ -46,10 +46,10 @@ GET https://cors-rosy.vercel.app/api/srp-garber-buick-gmc-market-value
 
 ### Query Parameters
 
-| Parameter | Required | Description                                  |
-|-----------|----------|----------------------------------------------|
-| `vin`     | ✅ Yes   | Comma-separated VINs to fetch MSRP for       |
-| `debug`   | ❌ No    | If true, includes Redis and filtering details |
+| Parameter | Required | Description                                   |
+| --------- | -------- | --------------------------------------------- |
+| `vin`     | ✅ Yes    | Comma-separated VINs to fetch MSRP for        |
+| `debug`   | ❌ No     | If true, includes Redis and filtering details |
 
 ---
 
@@ -60,11 +60,11 @@ This is an Edge Function that does the following:
 - Retrieves all `USED` vehicles for the rooftop using HomeNet's `LoadCompressedVehicles`
 - Parses `<CompressedVehicles>` XML payload
 - Maps the `<F ...>` field definitions into usable JSON
-- Caches the result in Upstash Redis for 6 hours under the key:  
+- Caches the result in Upstash Redis for 6 hours under the key:\
   `homenet:used:all`
 - Filters by requested VINs and returns the final matching records
 
-> ✅ **View full handler in** [`srp-garber-buick-gmc-market-value.ts`](./srp-garber-buick-gmc-market-value.ts)
+> ✅ **View full handler in** 
 
 ---
 
@@ -93,12 +93,12 @@ This is an Edge Function that does the following:
 
 ## 🔗 Related Files
 
-- [`vehicle-market-value-injector.js`](./vehicle-market-value-injector.js) – Client-side script to inject MSRP/savings
-- [`srp-garber-buick-gmc-market-value.ts`](./srp-garber-buick-gmc-market-value.ts) – Serverless function
-- [`redis.ts`](./lib/redis.ts) – Upstash Redis instance helper
-- [`cors.ts`](./lib/cors.ts) – Edge-compatible CORS utility
+-  – Client-side script to inject MSRP/savings
+-  – Serverless function
+-  – Upstash Redis instance helper
+-  – Edge-compatible CORS utility
 
 ---
 
-Need help scaling this to multiple dealer rooftops or brands?  
+Need help scaling this to multiple dealer rooftops or brands?\
 📩 [developer-support@example.com](mailto:developer-support@example.com)
