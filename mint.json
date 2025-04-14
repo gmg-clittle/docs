@@ -7,12 +7,12 @@
   },
   "favicon": "/favicon.svg",
   "colors": {
-    "primary": "#0D9373",
-    "light": "#07C983",
-    "dark": "#0D9373",
+    "primary": "#072a60",
+    "light": "#072a60",
+    "dark": "#072a60",
     "anchors": {
-      "from": "#0D9373",
-      "to": "#07C983"
+      "from": "#072a60",
+      "to": "#072a60"
     }
   },
   "topbarLinks": [
@@ -80,6 +80,18 @@
         "api-reference/endpoint/get",
         "api-reference/endpoint/create",
         "api-reference/endpoint/delete"
+      ]
+    },
+    {
+      "group": "Internal Tools",
+      "pages": [
+        "stanley-cup/drivecentric"
+      ]
+    },
+    {
+      "group": "DDC API Scripts",
+      "pages": [
+        "ddc-api-scripts/garber-buick-gmc-market-value-srp"
       ]
     }
   ],
