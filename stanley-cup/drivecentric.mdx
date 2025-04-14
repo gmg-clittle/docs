@@ -1,0 +1,120 @@
+---
+title: DriveCentric Stanley Cup
+description: Workflow documentation for Desk Logs, Sold Logs, and Lead Source ROI reporting using DriveCentric, Google Sheets, and Colab.
+---
+
+# 🏆 DriveCentric Stanley Cup
+
+---
+
+## 📁 Desk Log
+
+### 🧾 Desk Log Reports
+
+#### For All Dealerships (except Garber Automotive Rochester)
+
+1. Go to [Reports List - My Reports](https://app.drivecentric.com/#/adhoc-reporting/manager/My%20Reports_)
+2. Open **DESKING REPORT - DIGITAL**
+3. Confirm location: **Garber Buick GMC**
+   - Click your initials (top right)
+   - Ensure it shows "Garber Buick GMC"
+   - If not, click **Change Stores**
+
+#### For Garber Automotive Rochester
+
+1. Go to [Reports List - My Reports](https://app.drivecentric.com/#/adhoc-reporting/manager/My%20Reports_)
+2. Open **DESKING REPORT - DIGITAL - ROC**
+3. Confirm location: **Garber Automotive Rochester**
+
+---
+
+### 📊 Data Log
+
+- Open the [Desk Log Google Spreadsheet](https://docs.google.com/spreadsheets/d/11A53zSzimA-Y3uJxTTTJ0Ox-L3es0EU0o-nY8hyecyU/edit#gid=1638746683)
+
+> ✅ Log numbers from the DESKING REPORT into the Google Sheet.
+
+---
+
+### ❌ ~~Opportunities Lead Source Categorizer (Deprecated)~~
+
+~~Was previously used for: Internet Leads, Engaged~~  
+~~Walk-in and phone leads were manually added to Used~~
+
+---
+
+> ⚠️ Always verify:
+> - Date range = **Last Month**
+> - Store = **Correct location**
+
+---
+
+## 📁 Sold Log
+
+### 📥 Accessing Reports
+
+1. Visit the [Mining tab](https://app2.drivecentric.com/#/mining)
+2. Open **Sold Log - Digital Marketing - Last Month**
+3. Click `⋮` → Download `.csv`
+
+---
+
+### 📤 Email the Report
+
+- **To:** [3j2qcybtgh9l1o9w9vo1pnbuf17crsi1@hook.us1.make.com](mailto:3j2qcybtgh9l1o9w9vo1pnbuf17crsi1@hook.us1.make.com)
+- **Subject Line:** Dealership name from **Column B**
+- **Body:** _Leave blank_
+- **Attachment:** The `.csv` file
+
+> ⚠️ The dealership name **must match exactly** (e.g., "Garber Buick GMC").
+
+---
+
+### ⚡ Quick Tools
+
+💡 [Stanley Cup DriveCentric Sold Log Uploader](https://gmg-digital.vercel.app/stanley-cup/sold-log)  
+⚠️ [Garber Rochester Sold Log Splitter](https://gmg-digital.vercel.app/stanley-cup/garber-rochester-sold-log)
+
+
+---
+
+## 📁 Lead Source ROI
+
+### 🏢 Single Make Dealerships
+
+1. Open the [Lead Source ROI Tool](https://docs.google.com/spreadsheets/d/15S5i7w2wpBygtxhdNAbVbkqPW3eAIF8dTIep4X4Uu7w/edit#gid=24451816)
+2. Use these sheets:
+   - `Lead Source ROI`
+   - `Lead Source ROI Part 2`
+   - `Menu`
+
+#### ✅ Usage Steps
+
+- **Clear Data** (Menu tab → "Clear Data" button)
+- **Paste Part 1** → `Lead Source ROI` (dealership name in A1)
+- **Paste Part 2** → `Lead Source ROI Part 2`
+- **Start Process** → Use the "Start Process" button in Menu tab
+- **Output** → Results appear in `Output` sheet + exported `.csv`
+- **Review Log** → Confirm “Success” + timestamp in `Log` sheet
+
+---
+
+### 🧩 Multi-Make Dealerships (Colab Notebooks)
+
+Choose your dealership:
+
+- [Garber Buick GMC](https://colab.research.google.com/drive/1Rd-oXPLsfKiccPlU6rkRIqqw8dnZlPWR#scrollTo=5lW8sqMU1-hp)
+- [Delray Buick GMC](https://colab.research.google.com/drive/13NtiUuF4wQh0-K2p4Xc5SmvIWDPVDXFu#scrollTo=modHaI_jr8Ug)
+- [Hilton Head](https://colab.research.google.com/drive/1SXt8tYAJIpmhMWkOXNO2OPwx4cdpKe4R#scrollTo=F-rVcXot3t2V)
+- [Garber Randall](https://colab.research.google.com/drive/1Zk8t-C-jmPV6KMxM_Oro_2iurbmXAkrj#scrollTo=qVLCS5rT1Zpf)
+- [Garber Rochester](https://colab.research.google.com/drive/1IoUZwdo-nh6UjZoPYSllYNyb3HorUnm1?usp=sharing)
+- [Garber Automall](https://colab.research.google.com/drive/11jPaY8e4lmPKJtDjR_UbDSyAKTr_99Yi)
+- [Garber Bay Road](https://colab.research.google.com/drive/1UN-EP5eUYl7NjFI9Ny_Ba0Y6BC8WtPtm?usp=sharing)
+
+#### ✅ Steps
+
+1. Upload `Part 1` and `Part 2` CSV files per make
+2. Run the notebook to process and validate
+3. Use **"Clean Up Files"** after output download
+
+---
