@@ -1,23 +1,26 @@
 ---
-title: Market Value Savings Widget
-description: Injects MSRP and savings data for used vehicles on SRPs using Dealer.com API and external pricing API.
+title: Market Value Pricing Integration
+description: Documentation for the Dealer.com market-based pricing injection and API endpoint used to retrieve MSRP values from HomeNet via Redis caching.
 ---
 
-import CodeBlock from '@theme/CodeBlock';
+# Market-Based Pricing Widget (Used Vehicles)
 
-# Market Value Savings Widget
+This tool injects **market-based MSRP values** for used vehicles on the Search Results Page (SRP) using Dealer.com's API and a custom serverless API. It highlights MSRP and savings dynamically beneath each used vehicle listing.
 
-This script dynamically injects a "Market Based Price" and savings pill for used vehicles on the Search Results Page (SRP), powered by a remote API that provides MSRP values.
+---
 
-## How It Works
+## 🔁 Workflow Overview
 
-- Listens for the `page-load-v1` event to confirm you're on the SRP.
-- Subscribes to `vehicle-data-updated-v1` to react to inventory data availability.
-- Fetches VINs and inventory types, filtering only `used` vehicles.
-- Calls a remote API for MSRP values.
-- Injects a pricing banner showing MSRP and calculated savings below each vehicle with valid pricing data.
+1. **Script loads on SRP** → Listens to inventory events from Dealer.com API.
+2. **Filters `used` vehicles** and gathers their VINs.
+3. **Calls your custom API** at [`/api/srp-garber-buick-gmc-market-value`](#api-endpoint-details) with those VINs.
+4. **Displays**:
+   - MSRP (crossed out)
+   - Savings pill (`Save $X,XXX`)
 
-## Script
+---
+
+## 🧩 Script (Client-side Injection)
 
 <CodeBlock language="javascript">
 
@@ -104,17 +107,172 @@ This script dynamically injects a "Market Based Price" and savings pill for used
 
 </CodeBlock>
 
-## Styling Output
+---
 
-- **Market Based Price** is shown in red with a line-through.
-- **Savings Pill** appears as a green pill indicating the amount saved off MSRP.
+## 📡 API Endpoint Details
 
-## Requirements
+### URL
+GET https://cors-rosy.vercel.app/api/srp-garber-buick-gmc-market-value
 
-- Must be embedded on Dealer.com SRP.
-- External API must support VIN-based MSRP lookups.
-- Final price must be accessible via `meta.finalPrice`.
+### Query Parameters
+
+| Parameter | Required | Description                                  |
+|-----------|----------|----------------------------------------------|
+| `vin`     | ✅ Yes   | Comma-separated VINs to fetch MSRP for       |
+| `debug`   | ❌ No    | If true, includes Redis and filtering details |
 
 ---
 
-For advanced customization, consider adding additional styles, fallback logic, or MSRP label translations.
+## 🧠 Serverless API Logic
+
+The following Edge Function uses **Upstash Redis** for caching and fetches **compressed XML data from HomeNet** when the cache is cold. It maps VINs and MSRP data and returns the relevant vehicles from the requested VIN list.
+
+<CodeBlock language="ts">
+
+import { NextRequest } from 'next/server';
+import cors from '../../lib/cors';
+import { Redis } from '@upstash/redis';
+
+export const config = {
+  runtime: 'edge',
+};
+
+const INTEGRATION_TOKEN = 'e1628d48-8bd4-4721-ac20-edb0402f5a61';
+const ROOFTOP = 'GarberBGMCFtPierce';
+const REDIS_KEY = 'homenet:used:all';
+
+const redis = new Redis({
+  url: 'https://gorgeous-peacock-20514.upstash.io',
+  token: 'AVAiAAIjcDEyZmJhNDU0ZGJhMTc0N2IwYTE4ODZjZGY1NzRiMTZmZnAxMA',
+});
+
+function htmlUnescape(str: string): string {
+  return str
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+export default async function handler(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const vinParam = searchParams.get('vin');
+  const debug = searchParams.get('debug') === 'true';
+
+  if (!vinParam) {
+    return cors(
+      req,
+      new Response(JSON.stringify({ error: 'VIN is required' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+  }
+
+  const requestedVINs = vinParam.split(',').map(v => v.trim().toUpperCase());
+
+  let allVehicles: any[] | null = await redis.get(REDIS_KEY);
+
+  if (!allVehicles) {
+    const apiUrl = \`https://services.homenetiol.com/Gateway.asmx/LoadCompressedVehicles?IntegrationToken=\${INTEGRATION_TOKEN}&RooftopCollection=\${ROOFTOP}&FieldList=vin,msrp&InventoryFilter=type='USED'\`;
+
+    try {
+      const response = await fetch(apiUrl);
+      const rawXml = await response.text();
+
+      if (!response.ok) {
+        throw new Error(\`HomeNet API error: \${response.statusText}\`);
+      }
+
+      const compressedMatch = rawXml.match(/<CompressedVehicles>(.*?)<\/CompressedVehicles>/s);
+      const compressedRaw = compressedMatch?.[1] || '';
+      const unescapedXml = htmlUnescape(compressedRaw);
+
+      const fieldMap: Record<string, string> = {};
+      const fieldMatch = unescapedXml.match(/<F\s+([^>]*)>/s);
+      if (fieldMatch) {
+        const attrs = fieldMatch[1].split(/"\s+/).map(attr => attr.replace(/"/g, ''));
+        for (const attr of attrs) {
+          const [key, value] = attr.split('=');
+          if (key && value) {
+            fieldMap[key.trim()] = value.trim();
+          }
+        }
+      }
+
+      const vehicleMatches = Array.from(unescapedXml.matchAll(/<V\s+([^>]+?)\s*\/>/gs));
+      allVehicles = vehicleMatches.map(match => {
+        const attributes = match[1].trim().split(/\s+/).map(attr => attr.replace(/"/g, ''));
+        const entry: Record<string, string> = {};
+        for (const attr of attributes) {
+          const [key, value] = attr.split('=');
+          const fieldName = fieldMap[key.trim()];
+          if (fieldName) {
+            entry[fieldName] = value.trim();
+          }
+        }
+        return entry;
+      });
+
+      await redis.set(REDIS_KEY, allVehicles, { ex: 21600 }); // Cache for 6 hours
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      return cors(
+        req,
+        new Response(JSON.stringify({ error: 'HomeNet API Error', details: errorMsg }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+    }
+  }
+
+  const filtered = allVehicles.filter(vehicle =>
+    requestedVINs.includes(vehicle.vin?.toUpperCase())
+  );
+
+  if (debug) {
+    return cors(
+      req,
+      new Response(
+        JSON.stringify(
+          {
+            requestedVINs,
+            redisCacheUsed: !!allVehicles,
+            filteredVehicleCount: filtered.length,
+            filteredVehicles: filtered,
+          },
+          null,
+          2
+        ),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      )
+    );
+  }
+
+  return cors(
+    req,
+    new Response(JSON.stringify(filtered), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  );
+}
+
+</CodeBlock>
+
+---
+
+## 🧾 Notes & Best Practices
+
+- The Redis key (`homenet:used:all`) stores **all used vehicle data** across the rooftop for **6 hours**.
+- API responses will skip any VINs not in HomeNet’s data or if MSRP is missing.
+- Add a `debug=true` query param to inspect:
+  - VINs submitted
+  - Cache usage
+  - Filtered results
+---
