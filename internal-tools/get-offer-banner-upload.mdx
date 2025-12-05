@@ -1,0 +1,75 @@
+---
+title: "Get Offer Specials Banner Upload Process"
+description: "Step-by-step guide for uploading and verifying "Get Offer" banners on dealership websites for non-automated specials."
+keywords: ["Get Offer banners","dealership specials","non-automated specials","specials upload portal","banner troubleshooting"]
+---
+
+# Dealer Specials Banner Upload Process
+
+This guide details the process for uploading "Get Offer" banners for non-automated dealership specials. Follow these steps to ensure banners are displayed correctly on the dealership website.
+
+---
+
+## **Step 1: Create the Special**
+
+1. Log in to Dealer.com's back-end system.
+2. Create a special for the relevant make and model.
+3. Ensure all necessary details, such as disclaimers and expiration dates, are configured and saved.
+
+---
+
+## **Step 2: Upload Banners**
+
+1. Navigate to the [Specials Upload Portal](https://gmg-digital.vercel.app/specials-upload-portal).
+2. Select the dealership's website domain from the dropdown list.
+3. Enter the **Make** and **Model** that match the special you created.
+4. Upload the following banners:
+   - **Desktop Banner**: High-resolution banner for desktop views.
+   - **Mobile Banner**: Optimized banner for mobile views.
+5. Click **Submit** to upload the banners.
+
+Upon submission, the banners will be processed and stored on the server for that dealership, associated with the specific make and model special.
+
+---
+
+## **Step 3: Verify the Banner Display**
+
+1. Visit the dealership website and navigate to `/new-inventory/index.htm`.
+2. Use the filter options to select the **Make** and **Model** associated with the special.
+3. Confirm that both the **Desktop** and **Mobile** "Get Offer" banners appear correctly on the page.
+
+Note: The banner script "piggybacks" off of the Dealer.com (DDC) special, utilizing information such as the disclaimer, expiration date, and other details. This eliminates the need to specify those details again when uploading banners.
+
+---
+
+## **Troubleshooting Steps**
+
+If the banners do not appear after completing the steps above, try the following:
+
+### **1. Check Banner Uploads**
+
+- Revisit the [Specials Upload Portal](https://gmg-digital.vercel.app/specials-upload-portal).
+- Ensure that the correct banners were uploaded for the selected make and model.
+- Verify that both desktop and mobile banners were uploaded without errors.
+
+### **2. Confirm Special Configuration**
+
+- Log in to Dealer.com's back-end.
+- Ensure that the special has been activated and published.
+- Double-check that the make and model match what was entered in the upload portal.
+
+### **3. Clear Cache**
+
+- Clear your browser cache or refresh the page with `Ctrl + Shift + R`.
+- Ask your development or IT team to clear the website cache if necessary.
+
+### **4. Verify Script Installation**
+
+- Ensure the script responsible for displaying banners is properly added to the dealership's website.
+- Contact the [**Digital Marketing Support Team**](https://gmg-digital.vercel.app/support) for assistance with verifying or installing the script, as well as for any further troubleshooting steps.
+
+---
+
+## **Contact Support**
+
+If issues persist, submit a support ticket to the [**Digital Marketing Support Team**](https://gmg-digital.vercel.app/support) for further assistance.
