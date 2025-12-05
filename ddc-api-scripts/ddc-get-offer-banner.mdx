@@ -1,70 +1,114 @@
 ---
+
 title: "GMG Universal SRP Get Offer Banner"
+
 ---
 
 # GMG Universal SRP Get-Offer Banner
 
-<Badges>
-  <Badge color="blue">Garber Digital Marketing</Badge>
-  <Badge color="purple">DDC Web Integration</Badge>
-  <Badge color="green">SheetDB</Badge>
-</Badges>
+\<Badges\>
 
-**Version:** 1.0.0\
-**Owner:** Garber Digital Marketing Team\
+  \<Badge color="blue"\>Garber Digital Marketing\</Badge\>
+
+  \<Badge color="purple"\>DDC Web Integration\</Badge\>
+
+  \<Badge color="green"\>SheetDB\</Badge\>
+
+\</Badges\>
+
+**Version:** 1.0.0\\
+
+**Owner:** Garber Digital Marketing Team\\
+
 **Last Edited:** Chris Little — 12/05/2025
 
-For questions, feature requests, or support, please visit: [**garberspecials.com/support**](https://garberspecials.com/support).
+For questions, feature requests, or support, please visit: [\*\*garberspecials.com/support\*\*](https://garberspecials.com/support).
 
-:::info This document describes how the **Universal SRP Get-Offer Banner** script works on Dealer.com Search Results Pages (SRP).\
-It covers configuration, dependencies, data flow, and integration details for QA, support, and future enhancements. :::
+:::info
+
+This document describes how the **Universal SRP Get-Offer Banner** script works on [Dealer.com](http://Dealer.com) Search Results Pages (SRP).\\
+
+It covers configuration, dependencies, data flow, and integration details for QA, support, and future enhancements.
+
+:::
 
 ---
 
 ## 1. High-Level Overview
 
-<Cards>
-  <Card title="What this script does">
+\<Cards\>
+
+  \<Card title="What this script does"\>
+
     Injects a **Get Offer** banner on SRPs that promotes a model-specific special
+
     and opens a modern iframe-based dialog when clicked.
-  </Card>
 
-  <Card title="Primary data sources">
-    <ul>
-      <li><strong>DDC Web Integration API</strong> for page + inventory context.</li>
-      <li><strong>SheetDB</strong> connected to a Google Sheet of monthly offers.</li>
-      <li><strong>Garber Specials App</strong> (Next.js) for the iframe form.</li>
-    </ul>
-  </Card>
+  \</Card\>
 
-  <Card title="Key strategy">
-    Chooses the <strong>most frequent model</strong> on the SRP (with a small boost
+  \<Card title="Primary data sources"\>
+
+    \<ul\>
+
+      \<li\>\<strong\>DDC Web Integration API\</strong\> for page + inventory context.\</li\>
+
+      \<li\>\<strong\>SheetDB\</strong\> connected to a Google Sheet of monthly offers.\</li\>
+
+      \<li\>\<strong\>Garber Specials App\</strong\> (Next.js) for the iframe form.\</li\>
+
+    \</ul\>
+
+  \</Card\>
+
+  \<Card title="Key strategy"\>
+
+    Chooses the \<strong\>most frequent model\</strong\> on the SRP (with a small boost
+
     for visible/active vehicles) and renders a banner only if that model has an
+
     active + enabled special in the SheetDB feed.
-  </Card>
-</Cards>
+
+  \</Card\>
+
+\</Cards\>
 
 ---
 
 ## 2. Core Responsibilities
 
-<Steps>
-  <Step title="Hook into Dealer.com events">
-    Subscribes to DDC API events (`page-load-v1`, `vehicle-shown-v1`, `vehicle-data-updated-v1`) to detect SRP context and live vehicle data.
-  </Step>
-  <Step title="Pick a target model">
+\<Steps\>
+
+  \<Step title="Hook into [Dealer.com](http://Dealer.com) events"\>
+
+    Subscribes to DDC API events `page-load-v1`, `vehicle-shown-v1`, `vehicle-data-updated-v1`) to detect SRP context and live vehicle data.
+
+  \</Step\>
+
+  \<Step title="Pick a target model"\>
+
     Determines the most frequent make/model pair on the page, with a mild score boost for vehicles that are actively visible or primary.
-  </Step>
-  <Step title="Query SheetDB for offers">
+
+  \</Step\>
+
+  \<Step title="Query SheetDB for offers"\>
+
     Uses the chosen make/model plus a site-specific sheet name to query SheetDB for a matching, active offer row.
-  </Step>
-  <Step title="Render a responsive banner">
+
+  \</Step\>
+
+  \<Step title="Render a responsive banner"\>
+
     If a valid offer row is found, it renders a responsive `picture` banner (desktop + mobile) and injects an offer disclaimer into the page.
-  </Step>
-  <Step title="Open iframe dialog on click">
+
+  \</Step\>
+
+  \<Step title="Open iframe dialog on click"\>
+
     Clicking the banner opens a custom iframe modal pointing to the `get-your-offer` Next.js page, passing offer + dealership context as query params.
-  </Step>
-</Steps>
+
+  \</Step\>
+
+\</Steps\>
 
 ---
 
@@ -72,31 +116,47 @@ It covers configuration, dependencies, data flow, and integration details for QA
 
 ### 3.1 Runtime Environment
 
-:::info This script is designed to run inside the **Dealer.com Web Integration API** environment. It should be loaded via the DDC `APILoader` pattern. :::
+:::info
+
+This script is designed to run inside the [**Dealer.com**](http://Dealer.com)** Web Integration API** environment. It should be loaded via the DDC `APILoader` pattern.
+
+:::
 
 **Requires:**
 
-- `window.DDC.APILoader` (Dealer.com Web Integration API)
+- `window.DDC.APILoader` ([Dealer.com](http://Dealer.com) Web Integration API)
+
 - Modern browser with ES6 support (arrow functions, `const/let`, `URL`, `fetch`, `Map`)
+
 - Network access to:
+
   - `https://sheetdb.io/api/v1/...`
+
   - `https://gmg-digital.vercel.app/get-your-offer`
 
 ### 3.2 External Services
 
-<Cards>
-  <Card title="Dealer.com Web Integration API">
+\<Cards\>
+
+  \<Card title="[Dealer.com](http://Dealer.com) Web Integration API"\>
+
     Used to subscribe to page events and inject the banner into the SRP DOM.
-  </Card>
 
-  <Card title="SheetDB (Google Sheets backend)">
+  \</Card\>
+
+  \<Card title="SheetDB (Google Sheets backend)"\>
+
     Hosts the structured specials data for each dealership, keyed by Make/Model.
-  </Card>
 
-  <Card title="Garber Get Offer App (Next.js)">
+  \</Card\>
+
+  \<Card title="Garber Get Offer App (Next.js)"\>
+
     The iframe-based form app that receives query params and posts leads to a webhook.
-  </Card>
-</Cards>
+
+  \</Card\>
+
+\</Cards\>
 
 ---
 
@@ -106,82 +166,132 @@ It covers configuration, dependencies, data flow, and integration details for QA
 
 The script reads a `window.GETOFFER_CONFIG` object if present and merges it with internal defaults.
 
-```js
+\`\`\`js
+
 const EXT = (typeof window !== 'undefined' ? (window.GETOFFER_CONFIG || {}) : {});
+
 const CONFIG = {
+
   debug: !!EXT.debug,
+
   restrictToNew: EXT.restrictToNew !== false,
+
   insertBeforeSelector: EXT.insertBeforeSelector
+
     || '.page-section[data-name="srp-wrapper-listing-inner-inventory-results"]',
 
   // Disclaimer targets
+
   disclaimerTargetSelectorPreferred: EXT.disclaimerTargetSelectorPreferred || '#bannerDisclaimer',
+
   disclaimerTargetSelectorFallback: EXT.disclaimerTargetSelectorFallback || '.content-disclaimer',
 
   // Dialog + libs
+
   iframeURL: EXT.iframeURL || 'https://gmg-digital.vercel.app/get-your-offer',
+
   webhookURL: EXT.webhookURL || 'https://hook.us1.make.com/ibg4n4raea0hao7xv3tqfqaoqwxyu1ea',
 
   // SheetDB
+
   sheetDbBase: EXT.sheetDbBase || 'https://sheetdb.io/api/v1/pom19rkndxfuq/search',
 
   // Image patterns
+
   imageBasePattern: EXT.imageBasePattern
+
     || 'https://assets.garberauto.com/specials/{slug1}/model-overview/{kind}/new-{make}-{model}-{slug2}.png',
+
   backgroundPattern: EXT.backgroundPattern
+
     || 'https://assets.garberauto.com/specials/{slug1}/background/new-{make}-{model}-{slug2}.jpg',
 
   // Defaults
+
   defaultSlug1: EXT.defaultSlug1 || 'garber-chevrolet-saginaw-saginaw-mi',
+
   defaultSlug2: EXT.defaultSlug2 || 'garber-chevrolet-saginaw',
+
   defaultSheetName: EXT.defaultSheetName || 'Garber Chevrolet Saginaw - Saginaw, MI',
 
   // Per-site overrides
+
   overrides: {
+
     accountId: (EXT.overrides && EXT.overrides.accountId) || {},
+
     domain:   (EXT.overrides && EXT.overrides.domain)   || {}
+
   }
+
 };
-```
+
+\`\`\`
 
 #### Key Options
 
 - `debug` – enables verbose `[GetOffer]` console logging.
+
 - `restrictToNew` – if `true`, only show the banner for **new** inventory.
+
 - `insertBeforeSelector` – DOM anchor for inserting the banner.
+
 - `iframeURL` – URL of the Next.js `get-your-offer` page.
-- `webhookURL` – Make.com (or other) webhook receiving form submissions.
+
+- `webhookURL` – [Make.com](http://Make.com) (or other) webhook receiving form submissions.
+
 - `sheetDbBase` – base SheetDB URL for querying specials.
 
 ### 4.2 Per-Site Overrides
 
 You can override slug + sheet settings per `accountId` or `domain`.
 
-```js
+\`\`\`js
+
 window.GETOFFER_CONFIG = {
+
   overrides: {
+
     accountId: {
+
       'garberfordbaycityfdfordfd': {
+
         slug1: 'garber-ford-bay-city-bay-city-mi',
+
         slug2: 'garber-ford-bay-city',
+
         sheetName: 'Garber Ford - Bay City, MI'
+
       }
+
     },
+
     domain: {
-      'garbermidland.com': {
+
+      '[garbermidland.com](http://garbermidland.com)': {
+
         slug1: 'garber-chevrolet-midland-mi',
+
         slug2: 'garber-chevrolet-midland',
+
         sheetName: 'Garber Chevrolet - Midland, MI'
+
       }
+
     }
+
   }
+
 };
-```
+
+\`\`\`
 
 Overrides are resolved in this order:
 
-1. Account-level override (`overrides.accountId[accountId]`)
-2. Domain-level override (`overrides.domain[defaultDomain]`)
+1. Account-level override `overrides.accountId[accountId]`)
+
+2. Domain-level override `overrides.domain[defaultDomain]`)
+
 3. Global defaults
 
 ---
@@ -192,60 +302,86 @@ Overrides are resolved in this order:
 
 The script boots via:
 
-```js
+\`\`\`js
+
 API = await APILoader.create();
 
-API.subscribe('page-load-v1', (ev) => {
+API.subscribe('page-load-v1', (ev) =\> {
+
   const payload = ev.payload || {};
+
   if (!payload.searchPage) return; // only SRP
 
   accountId = (payload.accountId || '').toLowerCase();
+
   websiteURL = `https://${payload.defaultDomain}`;
 
-  API.subscribe('dealership-info-v1', (info) => {
+  API.subscribe('dealership-info-v1', (info) =\> {
+
     dealershipName = info?.payload?.dealershipName || dealershipName;
+
   });
 
   API.subscribe('vehicle-shown-v1', handleVehicles);
+
   API.subscribe('vehicle-data-updated-v1', handleVehicles);
+
 });
-```
+
+\`\`\`
 
 ### 5.2 Choosing the Model
 
 The script inspects `payload.vehicleData` and scores each make/model pair:
 
-- Base score: **\+1** per occurrence.
-- Bonus: **\+10** if the vehicle is visible/primary (`inView`, `isActive`, `selected`, or `isPrimary`).
+- Base score: **\\+1** per occurrence.
+
+- Bonus: **\\+10** if the vehicle is visible/primary `inView`, `isActive`, `selected`, or `isPrimary`).
 
 The outcome is the `chosen` object:
 
-```ts
-type ChosenModel = {
-  key: string;              // e.g. "chevrolet-equinox"
-  make: string;             // "Chevrolet"
-  model: string;            // "Equinox"
-  inventoryType: string;    // usually "new" or "used"
-};
-```
+\`\`\`ts
 
-:::tip If `restrictToNew` is `true`, the banner only renders when `inventoryType === 'new'`. :::
+type ChosenModel = {
+
+  key: string;              // e.g. "chevrolet-equinox"
+
+  make: string;             // "Chevrolet"
+
+  model: string;            // "Equinox"
+
+  inventoryType: string;    // usually "new" or "used"
+
+};
+
+\`\`\`
+
+:::tip
+
+If `restrictToNew` is `true`, the banner only renders when `inventoryType === 'new'`.
+
+:::
 
 ### 5.3 SheetDB Lookup
 
 The script:
 
 1. Determines the active `sheetName`, `slug1`, and `slug2` from overrides/defaults.
+
 2. Normalizes the model name for some edge cases (e.g. `"Silverado 2500 HD" → "Silverado 2500HD"`).
+
 3. Calls SheetDB:
 
-```js
+\`\`\`js
+
 const url = `${CONFIG.sheetDbBase}?sheet=${encodeURIComponent(sheetName)}&Make=${encodeURIComponent(make)}&Model=${encodeURIComponent(model)}`;
-```
+
+\`\`\`
 
 The first row is used if:
 
 - `row.Expired === 'Active'`
+
 - `row.Status === 'Enabled'`
 
 If no valid row exists, the banner is fully collapsed (no blank space).
@@ -258,10 +394,13 @@ If no valid row exists, the banner is fully collapsed (no blank space).
 
 On first run, the script injects a container **before** the main SRP listing section:
 
-```js
+\`\`\`js
+
 const target = document.querySelector(CONFIG.insertBeforeSelector);
-// ... create <div id="getOfferBanner"> and insert before target
-```
+
+// ... create \<div id="getOfferBanner"\> and insert before target
+
+\`\`\`
 
 When no offer is applicable, the container is hidden via `display: none` and its contents are cleared.
 
@@ -269,27 +408,41 @@ When no offer is applicable, the container is hidden via `display: none` and its
 
 While an offer is being resolved, a shimmer-style skeleton is shown:
 
-```css
+\`\`\`css
+
 #getOfferBanner .go-skel {
+
   position: absolute;
+
   inset: 0;
+
   border-radius: 4px;
+
   background: linear-gradient(90deg, rgba(0,0,0,0.06) 25%, rgba(0,0,0,0.12) 37%, rgba(0,0,0,0.06) 63%);
+
   background-size: 400% 100%;
+
   animation: getoffer-shimmer 1.2s ease-in-out infinite;
+
 }
-```
+
+\`\`\`
 
 ### 6.3 Responsive Banner Image
 
 Once SheetDB + image checks succeed, the script renders a responsive `picture` element:
 
-```html
-<picture style="display:block; cursor:pointer;">
-  <source media="(max-width: 768px)" srcset="MOBILE_URL">
-  <img class="banner-image" src="DESKTOP_URL" alt="Model Offer Banner" style="width:100%;height:auto;display:block;">
-</picture>
-```
+\`\`\`html
+
+\<picture style="display:block; cursor:pointer;"\>
+
+  \<source media="(max-width: 768px)" srcset="MOBILE_URL"\>
+
+  \<img class="banner-image" src="DESKTOP_URL" alt="Model Offer Banner" style="width:100%;height:auto;display:block;"\>
+
+\</picture\>
+
+\`\`\`
 
 Background images may also be applied for added visual depth.
 
@@ -298,32 +451,49 @@ Background images may also be applied for added visual depth.
 Clicking the banner opens a full-viewport dialog with an iframe:
 
 - The iframe source is `CONFIG.iframeURL`.
+
 - Query params include:
+
   - `make`, `model`
+
   - `offerA`, `offerB`, `offerC`
+
   - `ddcId`, `dealership`, `disclaimer`, `webhook`, `websiteURL`
 
 The modal listens for `postMessage` from the iframe:
 
-```js
-if (event.origin === origin && event.data === 'formSubmissionSuccess') {
+\`\`\`js
+
+if (event.origin === origin && [event.data](http://event.data) === 'formSubmissionSuccess') {
+
   // Close the dialog shortly after successful submit
+
   setTimeout(closeGetOfferModal, 3000);
+
 }
-```
+
+\`\`\`
 
 ---
 
 ## 7. Error Handling & Edge Cases
 
-:::warning The script is designed to **fail gracefully**: if any step fails (API error, no offers, bad image URL), the banner is collapsed and SRP layout is preserved. :::
+:::warning
+
+The script is designed to **fail gracefully**: if any step fails (API error, no offers, bad image URL), the banner is collapsed and SRP layout is preserved.
+
+:::
 
 ### 7.1 Common Graceful Failures
 
-- **No SRP context** (`searchPage` is false): script exits silently.
+- **No SRP context** `searchPage` is false): script exits silently.
+
 - **No chosen model**: no banner rendered.
+
 - **SheetDB HTTP error**: banner is hidden, no blank space.
+
 - **Offer row inactive or disabled**: banner hidden.
+
 - **Desktop image 404**: show nothing and reset `currentKey` so future events can retry.
 
 ### 7.2 Debug Mode
@@ -332,12 +502,17 @@ When `CONFIG.debug === true`, the script logs detailed steps with `[GetOffer]` p
 
 You can toggle this via:
 
-```js
+\`\`\`js
+
 window.GETOFFER_CONFIG = {
+
   debug: true,
+
   // other overrides...
+
 };
-```
+
+\`\`\`
 
 Or by temporarily editing the script / config in the integration.
 
@@ -345,54 +520,76 @@ Or by temporarily editing the script / config in the integration.
 
 ## 8. Integration Steps
 
-<Steps>
-  <Step title="Add script to DDC Web Integration">
-    Include the compiled JS file in the Dealer.com Web Integration admin, scoped to SRP templates only if possible.
-  </Step>
-  <Step title="Configure GETOFFER_CONFIG">
+\<Steps\>
+
+  \<Step title="Add script to DDC Web Integration"\>
+
+    Include the compiled JS file in the [Dealer.com](http://Dealer.com) Web Integration admin, scoped to SRP templates only if possible.
+
+  \</Step\>
+
+  \<Step title="Configure GETOFFER_CONFIG"\>
+
     Add a small inline snippet to define `window.GETOFFER_CONFIG` with any site-specific overrides for slugs and sheet names.
-  </Step>
-  <Step title="Connect SheetDB">
+
+  \</Step\>
+
+  \<Step title="Connect SheetDB"\>
+
     Ensure the SheetDB endpoint is live and that each row includes the required columns (Make, Model, Offer-A/B/C, Disclaimer, Status, Expired).
-  </Step>
-  <Step title="QA on one store">
-    Turn on <code>
-    debug: true</code>
 
-    , confirm:
+  \</Step\>
 
-    <ul>
-    <li>
-    Correct model is detected.</li>
+  \<Step title="QA on one store"\>
 
-     <li>
-    Banner appears only when an active special exists.</li>
+    Turn on \<code\>debug: true\</code\>, confirm:
 
-     <li>
-    Click opens the iframe with correct pre-filled values.</li>
+    \<ul\>
 
-    </ul>
-  </Step>
-  <Step title="Roll out to additional stores">
+      \<li\>Correct model is detected.\</li\>
+
+      \<li\>Banner appears only when an active special exists.\</li\>
+
+      \<li\>Click opens the iframe with correct pre-filled values.\</li\>
+
+    \</ul\>
+
+  \</Step\>
+
+  \<Step title="Roll out to additional stores"\>
+
     Add domain/accountId overrides per dealership and confirm each has a matching SheetDB sheet + image assets.
-  </Step>
-</Steps>
+
+  \</Step\>
+
+\</Steps\>
 
 ---
 
 ## 9. Maintenance Notes
 
 - **Offer Expiration:** Driven via `Expired` and `Status` columns in the Google Sheet (through SheetDB).
+
 - **New Models:** When adding a new model, ensure:
+
   - Sheet row exists for each store that will run specials.
+
   - Image assets follow the `imageBasePattern` and `backgroundPattern` naming.
+
 - **Model Name Edge Cases:** If the site or SheetDB uses unusual model naming (e.g. `"Sierra 3500 HD"` vs `"Sierra 3500HD"`), update the normalization function.
 
-:::tip For questions, feature requests, or issues with this banner, please submit a ticket at\
-[**garberspecials.com/support**](https://garberspecials.com/support). :::
+:::tip
+
+For questions, feature requests, or issues with this banner, please submit a ticket at\\
+
+[\*\*garberspecials.com/support\*\*](https://garberspecials.com/support).
+
+:::
 
 ---
 
-**Developed by:** Garber Digital Marketing Team\
-**Last Edited:** Chris Little — 12/05/2025\
+**Developed by:** Garber Digital Marketing Team\\
+
+**Last Edited:** Chris Little — 12/05/2025\\
+
 **Support:** [garberspecials.com/support](https://garberspecials.com/support)
