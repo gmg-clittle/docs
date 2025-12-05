@@ -38,7 +38,8 @@
       "group": "DDC API Scripts",
       "pages": [
         "ddc-api-scripts/garber-buick-gmc-market-value-srp",
-        "ddc-api-scripts/mobile-call-us-cta"
+        "ddc-api-scripts/mobile-call-us-cta",
+        "ddc-api-scripts/ddc-get-offer-banner"
       ]
     }
   ]
