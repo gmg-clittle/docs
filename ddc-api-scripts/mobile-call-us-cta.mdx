@@ -1,176 +1,384 @@
----
-title: "GMG Mobile Call Us CTA – Technical Documentation"
-sidebarTitle: "GMG Mobile Call Us CTA"
----
+# GMG Mobile “Call Us” CTA Script (with Hours Logic + Sentry)
 
-**Developed by the Garber Digital Marketing Team**\
-**Last Edited: December 5, 2025 by Chris Little**
+**File:** `gmg-mobile-call-us-cta.js`\
+**Developed by:** Garber Digital Marketing Team\
+**Last edited by:** Chris Little on 12/5/2025\
+**Support / feature requests:** Visit [http](https://garberspecials.com/support)
+
+---
 
 ## Overview
 
-This script injects a **mobile-only “Call Us” CTA button** into Dealer.com Vehicle Detail Pages (VDPs).
+This script injects a **mobile-only “Call Us” CTA** into the Dealer.com VDP (`detailPage`) using the **Dealer.com Web Integration API**. It:
 
-It is designed to:
-
-- Only appear on **mobile VDPs**
-- Only appear when the **dealership is currently open** (based on hours from a DDC widget API)
-- Use a **Dynamic Number Insertion (DNI)** phone number if available, otherwise fall back to a **host → static phone** mapping
-- Respect dealer **time zones** (Eastern vs Central)
-- Provide detailed debugging output when `#gmgdigitaldebug` is present in the URL
-
-The script is intended to be loaded via Dealer.com’s **Web Integration API** and executed in the browser as an immediately‑invoked async function.
+1. Runs **only on VDP** and **only on mobile layout**.
+2. Chooses the phone number using **DNI cookie** first, then falls back to a **per-domain static mapping**.
+3. Calls the **`Dealer.com ws-site-text-search widget API`** via **POST** to fetch **dealer hours**.
+4. Shows the CTA **only when SALES (or DEALERSHIP) is currently open**, with a fallback to **8am–6pm local time** if hours cannot be used.
+5. Integrates **Sentry** in a **manual-only mode** to send targeted events for this script only (no global page errors).
+6. Supports **debug logging** when `#gmgdigitaldebug` is in the URL hash.
+7. Supports a **hard disable** using the hash `#gmgdigitalmobilectadisable`.
 
 ---
 
 ## High-Level Flow
 
-1. **Early Exit Checks**
-   - Exits if `#gmgdigitalmobilectadisable` is present.
-   - Detects debug mode (`#gmgdigitaldebug`).
-   - Loads CTA CSS via Web Integration API.
-   - Load page data (`detailPage`, `layoutType`, `accountId`).
-2. **DDC Website ID & Time Zone Resolution**
-   - Uses domain → DDC ID mapping.
-   - Uses domain → time zone mapping:
-     - Default: Eastern (`America/New_York`)
-     - Sunrise Chevrolet: Central (`America/Chicago`)
-3. **Operating Hours Check**
-   - Calls DDC POST endpoint to fetch store hours.
-   - Prioritizes:
-     1. `SALES` hours
-     2. `DEALERSHIP` hours
-     3. Default fallback: **8am–6pm local time**
-   - If closed → CTA NOT shown.
-1. **Phone Number Resolution**
-   - Tries to extract phone from DNI cookie (`ai-dni`).
-   - If unavailable → use domain-specific fallback phone.
-   - If still empty → no CTA injected.
+1. **Hash check**
+   - If the URL hash contains `gmgdigitalmobilectadisable`, the script logs and exits.
+2. **Environment + config**
+   - Determines `host` (strips `www.`).
+   - Resolves:
+     - `fallbackPhones[host]` → static phone mapping.
+     - `domainToDdcId[host]` → DDC website account ID.
+     - `timeZone` via `domainToTimeZone[host]` (Sunrise Chevrolet is `America/Chicago`, all others default to `America/New_York`).
+   - Checks `debug` flag using `#gmgdigitaldebug` in the hash.
+3. **Sentry initialization (manual-only)**
+   - Dynamically injects the Sentry CDN script:
+     - `https://js.sentry-cdn.com/c9ea240d831282b1405eff99cd283507.min.js`
+   - Calls `Sentry.init()` with:
+     - `defaultIntegrations: false`
+     - `integrations: []`
+     - `autoSessionTracking: false`
+     - `tracesSampleRate: 0`
+     - `replaysSessionSampleRate: 0`
+     - `replaysOnErrorSampleRate: 0`
+   - This ensures **only explicit calls** from this script send events (no automatic global error capturing).
+   - Helper wrappers:
+     - `captureSentryEvent(message, extra, level)`
+     - `captureSentryException(error, extra)`
+   - Both attach tags:
+     - `feature = "gmg-mobile-call-cta"`
+     - `host`, `timeZone`, and optionally `ddcId`
+   - Extras always include `url` and any additional context.
+4. **Dealer.com API + CSS**
+   - Uses `APILoader.create()` to get `API` object.
+   - Loads CSS from:\
+     `https://assets.garberauto.com/assets/css/gmg-mobile-call-us.css`
+   - Fetches page data via `API.utils.getPageData()` and inspects:
+     - `accountId`
+     - `layoutType`
+     - `searchPage`
+     - `detailPage`
+5. **Page guards**
+   - If **not** `detailPage` → log and exit.
+   - If layout is **not** `mobile` → log and exit.
+   - Resolves `ddcId` by:
+     - `domainToDdcId[host] || accountId`
+   - If no resolved `ddcId`, script logs, sends a Sentry **warning event**, and exits.
+6. **Current time (per timezone)**
+   - `getCurrentTimeInTz(timeZone)`:
+     - Uses `Intl.DateTimeFormat` with timezone and 24-hour clock.
+     - Returns `{ weekday, hour, minute }` for the **dealer’s local time**.
+   - `parseTimeStringToHourMinute("h:mm AM/PM")`:
+     - Parses strings like `"8:30 am"` or `"3:00 PM"` into `{ hour: 0–23, minute }`.
+7. **Default fallback business hours (when hours are broken/missing)**
+   - `isWithinDefaultBusinessHours()`:
+     - Uses current local time (dealer’s timezone) and returns `true` when **8:00 ≤ time \< 18:00**.
+     - Logs debug info when `#gmgdigitaldebug` is present.
+8. **`Hours-based open/closed logic (isSalesOpenNow)`**
+
+   ### API Call
+   - Constructs URL:
+
+     ```
+     /api/widget/ws-site-text-search/addData/${ddcId}/not-apple-mobile-device/${ddcId}/en_US/ws-site-text-search
+     ```
+   - Makes a **POST** request:
+
+     ```json
+     body: { "timeout": 200 }
+     headers: {
+       "Content-Type": "application/json",
+       "Accept": "application/json"
+     }
+     ```
+   - Credentials: `same-origin`.
+
+   ### Response Shapes Supported
+
+   The script supports **both** of these shapes:
+   1. Wrapped:
+
+      ```json
+      {
+        "status": 200,
+        "data": {
+          "hours": {
+            "SALES": [...],
+            "DEALERSHIP": [...]
+          }
+        }
+      }
+      ```
+   2. Flat:
+
+      ```json
+      {
+        "dealerInfo": {...},
+        "hours": {
+          "SALES": [...],
+          "DEALERSHIP": [...]
+        }
+      }
+      ```
+
+   It normalizes via:
+
+   ```js
+   const dataObj = json?.data && json.data.hours ? json.data : json;
+   const hoursObj = dataObj?.hours;
+   ```
+
+   ### Department selection priority
+
+   The script attempts to locate the most relevant department hours in this order:
+   1. `hoursObj.SALES`
+   2. `hoursObj.DEALERSHIP`
+
+   It sets:
+
+   ```js
+   let deptHours = null;
+   let deptLabel = null;
+   
+   if (Array.isArray(salesHoursRaw) && salesHoursRaw.length > 0) {
+     deptHours = salesHoursRaw;
+     deptLabel = "SALES";
+   } else if (Array.isArray(dealershipHoursRaw) && dealershipHoursRaw.length > 0) {
+     deptHours = dealershipHoursRaw;
+     deptLabel = "DEALERSHIP";
+   }
+   ```
+   - If **neither** SALES nor DEALERSHIP is usable, the script:
+     - Logs in debug mode.
+     - Sends a **Sentry warning event**:
+       - `"GMG CTA: No SALES or DEALERSHIP hours – using default-hours fallback"`
+     - Falls back to `isWithinDefaultBusinessHours()`.
+
+   ### Matching the current day
+   - Computes `todayName` from local weekday: `"monday"`, `"tuesday"`, etc.
+   - Finds an entry:
+
+     ```js
+     const todayEntry = deptHours.find(entry => {
+       const entryDay = (entry.day || "").toLowerCase();
+       return (
+         entryDay === todayName ||
+         entryDay.startsWith(todayName.slice(0, 3)) // e.g. "mon" for Monday
+       );
+     });
+     ```
+   - If no entry found:
+     - Logs in debug mode.
+     - Sends Sentry **warning** event: `"GMG CTA: No hours entry for today in chosen department – using default-hours fallback"`
+     - Uses `isWithinDefaultBusinessHours()` fallback.
+
+   ### Closed / unparseable timings
+   - If `timings` is missing or contains `"closed"` (case-insensitive), returns **false** (CTA hidden for that day).
+   - If timings cannot be split/parsing fails (e.g. `8:30 am - 6:00 pm` cannot be parsed):
+     - Logs in debug mode.
+     - Sends Sentry **warning** event describing the issue.
+     - Uses default `8am–6pm` fallback.
+
+   ### Final open/closed evaluation
+   - Parses open/close:
+
+     ```js
+     const open = parseTimeStringToHourMinute(openStr);
+     const close = parseTimeStringToHourMinute(closeStr);
+     ```
+   - Compares current time vs open/close (same timezone):
+
+     ```js
+     const afterOpen =
+       currentHour > open.hour ||
+       (currentHour === open.hour && currentMinute >= open.minute);
+     
+     const beforeClose =
+       currentHour < close.hour ||
+       (currentHour === close.hour && currentMinute <= close.minute);
+     
+     const isOpen = afterOpen && beforeClose;
+     ```
+   - Logs eval details in debug mode (department label, open/close, current time, result).
+1. **DNI + fallback phone logic**
+
+   ### DNI (`ai-dni` cookie)
+   - `getDniPhone()`:
+     - Reads `document.cookie` and finds cookie starting with `ai-dni=`.
+     - `decodeURIComponent` on the value, parses JSON.
+     - Extracts `parsed.numbers[0].rn` as the phone number (string).
+     - On parse errors, logs in debug and sends a Sentry exception with context `"GMG CTA: Error parsing ai-dni cookie"`.
+
+   ### Fallback mapping
+   - If no DNI number is available, script uses:
+
+     ```js
+     fallbackPhones[host] || null
+     ```
+   - If **neither** DNI nor fallback is available:
+     - Logs in debug.
+     - Sends a Sentry **warning** event: `"GMG CTA: No DNI or fallback phone available – CTA will not render"`.
+     - CTA is not injected.
+
+   ### Formatting
+   - `formatPhone(raw)`:
+     - Strips non-digits.
+     - If exactly 10 digits, formats as `XXX-XXX-XXXX`.
+     - If not 10 digits, returns `raw` unchanged.
+   - Formatted number is used primarily for logging/observability.
 2. **CTA Injection**
-   - Uses Web Integration API (`API.insert` + `API.append`) to inject CTA.
-   - CTA links to `tel:{phoneNumber}`.
+   - Only proceeds if:
+     - `detailPage === true`
+     - `layoutType === "mobile"`
+     - `salesOpen === true`
+     - `rawPhoneNumber` is non-empty
+   - Uses:
+
+     ```js
+     API.insert("vehicle-ctas", (elem, meta) => { ... });
+     ```
+   - `<a>` element configuration:
+     - `href="tel:${rawPhoneNumber}"`
+     - `class="gmg-mobile-callus-cta"`
+     - `target="_self"`
+     - `data-location="gmg-call-us-cta"`
+     - `data-account-ref={accountId}`
+     - `data-phone-ref="SALES"`
+     - `data-content-source="GMG Digital"`
+     - `ui-tabs-initial-load="false"`
+     - `data-web-api-inserted="true"`
+   - Inner HTML structure:
+
+     ```html
+     <div class="gmg-mobile-callus-cta-content">
+       <div class="gmg-mobile-callus-cta-icon">
+         <div class="gmg-mobile-callus-cta-phone-icon"></div>
+       </div>
+       <div class="gmg-mobile-callus-cta-text">
+         <div class="gmg-mobile-callus-cta-title">Call Us</div>
+         <div class="gmg-mobile-callus-cta-subtitle">Speak with Our Team</div>
+       </div>
+     </div>
+     <div class="gmg-mobile-callus-cta-arrow">
+       <svg width="8" height="14" viewBox="0 0 8 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+         <path d="M1 1L7 7L1 13" stroke="#303E49"></path>
+       </svg>
+     </div>
+     ```
+   - The visual styling is handled entirely by `gmg-mobile-call-us.css` loaded via `API.loadCSS()`.
 
 ---
 
-## Dependencies
+## Domain → DDC ID Mapping
 
-### Dealer.com Web Integration API
+A static mapping defines the correct **DDC website IDs** for each dealership domain. Example entries:
 
-Required global objects/services:
+- `garbermidland.com` → `garberchevroletofmidland`
+- `garberchevroletsaginaw.com` → `garberchevroletofsaginawgm`
+- `garberfordbaycity.com` → `garberfordbaycityfdfordfd`
+- `nissanofbradenton.com` → `garbernissanofbradenton`
+- `sunrisechevrolet.com` → `garbersunrisechev`
+- …and others for all Garber / partner stores.
 
-- `window.DDC.APILoader`
-- Methods used:
-  - `APILoader.create()`
-  - `API.loadCSS()`
-  - `API.utils.getPageData()`
-  - `API.insert()`
-  - `API.append()`
-
-### External Resources
-
-- CTA CSS file:\
-  `https://assets.garberauto.com/assets/css/gmg-mobile-call-us.css`
-
-### Browser APIs
-
-- `fetch()` for the POST request
-- `Intl.DateTimeFormat()` for timezone-correct timestamps
-- `document.cookie` for DNI lookup
-- Standard DOM manipulation
+If a host is **not** in the mapping, the script falls back to `accountId` from `getPageData()`.
 
 ---
 
-## CTA Injection Conditions
+## Timezone Handling
 
-CTA **only appears** if all conditions are true:
+- **Default:** `America/New_York` (Eastern Time)
+- **Special-case:**
+  - `sunrisechevrolet.com` → `America/Chicago` (Central Time)
 
-1. Not disabled by URL hash
-2. Must be **VDP**
-3. Must be **mobile layout**
-4. Must be **open** (Sales or Dealership hours)
-5. A **phone number** must be resolved
-
-If any fail → CTA is not inserted.
-
----
-
-## Hours Logic
-
-### Hours API Endpoint
-
-```
-POST /api/widget/ws-site-text-search/addData/{ddcId}/not-apple-mobile-device/{ddcId}/en_US/ws-site-text-search
-```
-
-Body:
-
-```json
-{ "timeout": 200 }
-```
-
-Headers:
-
-```json
-{ 
-  "Content-Type": "application/json",
-  "Accept": "application/json"
-}
-```
-
-### Department Selection Order
-
-1. **SALES**
-2. **DEALERSHIP**
-3. **Fallback 8am – 6pm local time**
-
-Handles multiple response shapes:
-
-- `{ status, data: { hours:{...} } }`
-- `{ hours:{...}, dealerInfo:{...} }`
-
-### Time‑Zone‑Aware Evaluation
-
-- Uses dealership’s local time via `Intl.DateTimeFormat`
-- Parses open/close strings like `"8:30 am - 8:00 pm"`
+All open/closed logic is computed using the dealership's local time.
 
 ---
 
 ## Debugging
 
-Add this hash to see detailed logs:
+To enable verbose logging in the browser console, append this hash to the URL:
 
-```
-#gmgdigitaldebug
-```
+- `#gmgdigitaldebug`
 
-Disable CTA altogether:
+To **disable** the CTA entirely on a page (for testing or temporary override), use:
 
-```
-#gmgdigitalmobilectadisable
-```
+- `#gmgdigitalmobilectadisable`
+
+Examples:
+
+- `https://www.garberchevroletsaginaw.com/VehicleDetails/...#gmgdigitaldebug`
+- `https://www.garberchevroletsaginaw.com/VehicleDetails/...#gmgdigitalmobilectadisable`
 
 ---
 
-## Support & Future Enhancements
+## Sentry: Testing & Observability
 
-This script is actively maintained by the **Garber Digital Marketing Team**.\
-For:
+The script uses **manual-only** Sentry events. No global `"window.onerror"` or console errors are captured automatically.
 
-- Bug reports
-- Feature requests
-- Enhancements
-- Technical guidance
-- Documentation updates
+You can test that Sentry is wired up by running this in the browser console on a page where the script is active:
 
-## Summary
+```js
+(function testGmgCtaSentry() {
+  if (!window.Sentry || typeof window.Sentry.captureMessage !== "function") {
+    console.log("[GMG][SENTRY-TEST] Sentry not ready yet on this page.");
+    return;
+  }
 
-This script provides a production‑grade, time‑zone‑aware, DNI‑aware mobile Call Us button that:
+  window.Sentry.withScope(scope => {
+    scope.setLevel("warning");
+    scope.setTag("feature", "gmg-mobile-call-cta");
+    scope.setTag("host", window.location.hostname.replace(/^www\./, "") || "unknown-host");
+    scope.setExtra("url", window.location.href);
+    scope.setExtra("testSource", "manual-console-test");
+    scope.setExtra("note", "This is a manual test event triggered from the browser console.");
 
-- Respects dealership business hours
-- Correctly interprets Sales and Dealership hours
-- Falls back gracefully on malformed/missing data
-- Ensures the CTA only appears when appropriate
-- Integrates cleanly with Dealer.com’s Web Integration API
+    window.Sentry.captureMessage("GMG CTA: Manual Sentry test event from console");
+  });
 
-Maintained and updated by\
-**Garber Digital Marketing Team**\
-_Last Edited: December 5, 2025 — Chris Little_
+  console.log("[GMG][SENTRY-TEST] Sent test event to Sentry.");
+})();
+```
+
+In Sentry, you can filter by:
+
+- Tag: `feature = gmg-mobile-call-cta`
+- Message prefix: `GMG CTA: ...`
+
+---
+
+## Dependencies
+
+- **Dealer.com Web Integration API**
+  - `window.DDC.APILoader`
+  - Methods used:
+    - `APILoader.create()`
+    - `API.utils.getPageData()`
+    - `API.loadCSS()`
+    - `API.insert()`
+    - `API.append()`
+- **Sentry Browser SDK** (loaded dynamically by this script)
+  - CDN: `https://js.sentry-cdn.com/c9ea240d831282b1405eff99cd283507.min.js`
+- **Browser APIs**
+  - `fetch()`
+  - `Intl.DateTimeFormat`
+  - `document.cookie`
+  - `window.location`
+
+---
+
+## Operational Notes
+
+- If **Sales hours are missing**, the script uses **Dealership hours** instead, if available.
+- If **both** are missing or unusable, it falls back to **8am–6pm local time**.
+- If **no phone number** can be resolved (neither DNI nor static mapping), the CTA does **not** render and a Sentry **warning** is sent.
+- All Sentry tags include at minimum:
+  - `feature: gmg-mobile-call-cta`
+  - `host`
+  - `timeZone`
+  - optionally `ddcId`
+
+For questions, feature requests, or support regarding this script, please visit:\
+➡️ [**https://garberspecials.com/support**](https://garberspecials.com/support)
+
+Developed and maintained by the **Garber Digital Marketing Team**.
