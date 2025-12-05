@@ -1,0 +1,364 @@
+---
+title: "Vehicle Budget & Payment Calculator Widget"
+---
+
+A responsive, iframe-embeddable **Payment / Vehicle Budget Calculator** that lets shoppers:
+
+- Start with a **target monthly payment** and estimate an approximate **vehicle price (Buying Power)**, or
+- Start with a **vehicle price** and estimate an approximate **monthly payment**.
+
+This widget is intended to be hosted on `gmg-digital.vercel.app` and embedded on dealership websites as a standalone budgeting tool.
+
+---
+
+## Tech Overview
+
+- **Framework:** Next.js / React (client component)
+- **Language:** TypeScript / JavaScript
+- **UI:** Tailwind CSS + shadcn/ui components
+- **Charts:** Recharts (donut chart)
+- **Icons:** Lucide React
+- **Resizing:** `postMessage`-based iframe height auto-resize
+
+Key imports used:
+
+- React hooks: `useState`, `useEffect`, `useMemo`
+- shadcn/ui: `Button`, `Input`, `Label`, `Card`, `Tabs`, `Slider`, `Separator`, `Tooltip`, `Collapsible`
+- Recharts: `ResponsiveContainer`, `PieChart`, `Pie`, `Cell`, `Tooltip` (aliased as `RechartsTooltip`)
+- Utility: `cn` from `@/lib/utils`
+
+---
+
+## Main Component
+
+**Component name:** `VehicleBudgetCalculator`
+
+This is exported as the default React component. It renders:
+
+1. A header with icon and mode tabs:
+   - **Budget First** – “Your Budget Settings”
+   - **Vehicle First** – “Vehicle Settings”
+2. Left side:
+   - Inputs for payment or price
+   - Down payment (amount or %)
+   - Trade-in value
+   - Term selection (months)
+   - Credit score tier pills
+   - Optional advanced inputs for sales tax and doc/title fees
+3. Right side:
+   - Summary card (Buying Power or Monthly Payment)
+   - Donut chart breakdown
+   - Loan / interest / total payment summary
+   - Two CTAs (“View Vehicles in Budget”, “Get Pre-Approved”)
+   - Disclaimer text
+
+---
+
+## Calculation Modes
+
+The widget supports two modes, stored in `calculationMode`:
+
+- `price`  → **Budget First** (calculate vehicle price / buying power)
+- `payment` → **Vehicle First** (calculate monthly payment)
+
+### 1. Budget First (`calculationMode = "price"`)
+
+Inputs used:
+
+- Target monthly payment
+- Down payment amount or percentage
+- Trade-in value
+- APR (from credit tier)
+- Term (months)
+- Sales tax rate
+- Doc/title fees
+
+Steps:
+
+1. **Maximum loan amount (present value)**
+
+   ```text
+   PV = PMT × ((1 - (1 + r)^(-n)) / r)
+   ```
+
+   Where:
+   - `PMT` = target monthly payment
+   - `r`   = monthly interest rate (APR / 12)
+   - `n`   = number of payments (term in months)
+2. **Suggested vehicle price**
+
+   Core relationship:
+
+   ```text
+   Price + Taxes + Fees = Loan + Down + Trade
+   ```
+
+   Let:
+   - `TaxRate = salesTaxRate / 100`
+   - `Fees = docFee`
+   - `Loan = maxLoanAmount`
+   - If down payment is a fixed **amount**:
+
+     ```text
+     BuyingPower = Loan + Down + Trade - Fees
+     Price = BuyingPower / (1 + TaxRate)
+     ```
+   - If down payment is a **percentage** (DownRate = downPayment / 100):
+
+     ```text
+     Price × (1 + TaxRate) = Loan + (Price × DownRate) + Trade - Fees
+     Price × (1 + TaxRate - DownRate) = Loan + Trade - Fees
+     Price = (Loan + Trade - Fees) / (1 + TaxRate - DownRate)
+     ```
+3. **Totals**
+   - `totalPayments = monthlyPayment × numberOfPayments`
+   - `totalInterest = totalPayments - maxLoanAmount`
+   - Calculated `downPaymentAmount` is derived from type (amount vs %).
+
+### 2. Vehicle First (`calculationMode = "payment"`)
+
+Inputs used:
+
+- Vehicle price
+- Down payment amount or percentage
+- Trade-in value
+- APR (credit tier)
+- Term
+- Sales tax rate
+- Doc/title fees
+
+Steps:
+
+1. **Down payment amount**
+   - If `amount`: `downPaymentAmount = downPayment`
+   - If `percentage`: `downPaymentAmount = vehiclePrice × (downPayment / 100)`
+2. **Total cost & loan amount**
+
+   ```text
+   TotalCost = VehiclePrice × (1 + TaxRate) + Fees
+   LoanAmount = max(0, TotalCost - downPaymentAmount - TradeInValue)
+   ```
+3. **Monthly payment**
+
+   Standard loan formula:
+
+   ```text
+   PMT = LoanAmount × (r × (1 + r)^n) / ((1 + r)^n - 1)
+   ```
+
+   Where:
+   - `r = monthlyRate`
+   - `n = numberOfPayments`
+4. **Totals**
+   - `totalPayments = PMT × numberOfPayments`
+   - `totalInterest = totalPayments - LoanAmount`
+
+The `results` object (from `useMemo`) exposes:
+
+- `mainValue` (Buying Power or Monthly Payment)
+- `loanAmount`
+- `totalInterest`
+- `totalPayments`
+- `monthlyPayment` (normalized)
+- `downPaymentAmount`
+
+---
+
+## Credit Tier Configuration
+
+Type:
+
+```ts
+type CreditScoreKey =
+  | "Excellent (750+)"
+  | "Very Good (700-749)"
+  | "Good (650-699)"
+  | "Fair (600-649)"
+  | "Rebuilding (below 600)"
+
+interface CreditTier {
+  key: CreditScoreKey
+  label: string
+  range: string
+  rate: number  // APR
+  color: string // Used for UI and chart
+}
+```
+
+The component defines `CREDIT_TIERS` as an array of `CreditTier` objects and uses them to:
+
+- Drive APR for calculations
+- Render a 5-pill selector with colors
+- Show tooltips (label + range)
+
+---
+
+## URL Parameters (Configuration)
+
+The widget is designed to be configurable via query parameters, especially when embedded as an iframe.
+
+All parameters are optional. Omitted values fall back to defaults.
+
+### Supported Parameters
+
+- `calculationMode`
+  - `price` or `payment`
+  - Controls initial mode.
+- `monthlyPayment`
+  - Number (e.g., `800`)
+  - Initial target monthly payment for Budget First.
+- `vehiclePrice`
+  - Number (e.g., `35000`)
+  - Initial vehicle price for Vehicle First.
+- `tradeInValue`
+  - Number
+  - Initial trade-in amount.
+- `downPayment`
+  - Number
+  - Either a dollar amount or percentage, depending on type.
+- `downPaymentType`
+  - `amount` or `percentage`
+  - How to interpret `downPayment`.
+- `creditScore`
+  - String matching one of the `CreditTier.key` values, e.g.:
+    - `Excellent (750+)`
+    - `Good (650-699)`
+- `term`
+  - Number (one of `36`, `48`, `60`, `72`, `84`)
+  - Initial loan term in months.
+- `salesTaxRate`
+  - Number, e.g. `6` for 6%.
+- `docFee`
+  - Number of dollars for doc/title fees.
+- `domainUrl`
+  - String, e.g. `https://garbermidland.com`
+  - Base domain for the “View Vehicles in Budget” CTA.
+- `financingUrl`
+  - String, full URL to the online credit application page.
+- `themeColor`
+  - Hex color string, e.g. `#072a60`
+  - Used for header accent, chart slice, term pill, and primary CTA.
+- `frameId`
+  - String ID for the iframe, defaults to `gmg-budget-calculator`.
+- `parentOrigin`
+  - Origin string, used by `postMessage` when resizing.
+  - Example: `https://www.garbermidland.com`.
+
+---
+
+## Iframe Resizing
+
+The component automatically resizes its parent iframe via `postMessage`.
+
+Inside the widget:
+
+1. `ResizeObserver` and `MutationObserver` watch `document.body` for changes.
+2. A computed height is posted to the parent:
+
+   ```js
+   window.parent?.postMessage(
+     { type: "IFRAME_HEIGHT", frameId, height },
+     parentOrigin
+   )
+   ```
+
+Parent page example:
+
+```js
+window.addEventListener("message", (event) => {
+  const data = event.data
+  if (!data || data.type !== "IFRAME_HEIGHT") return
+
+  const { frameId, height } = data
+  const iframe = document.getElementById(frameId)
+  if (iframe && typeof height === "number") {
+    iframe.style.height = `${height}px`
+  }
+})
+```
+
+---
+
+## Example Iframe Embed
+
+```html
+<iframe
+  src="https://gmg-digital.vercel.app/vehicle-budget-calculator
+    ?monthlyPayment=500
+    &tradeInValue=5000
+    &downPayment=20
+    &downPaymentType=percentage
+    &creditScore=Excellent%20(750%2B)
+    &term=60
+    &domainUrl=https://garbermidland.com
+    &financingUrl=https://www.garbermidland.com/financing/application.htm
+    &frameId=gmg-budget-calculator
+    &parentOrigin=https://www.garbermidland.com"
+  id="gmg-budget-calculator"
+  style="width: 100%; border: none; overflow: hidden;"
+  scrolling="no"
+  allowtransparency="true"
+  loading="lazy">
+</iframe>
+```
+
+---
+
+## CTAs & SRP Integration
+
+### “View Vehicles in Budget” Button
+
+The widget computes an `internetPrice` parameter:
+
+- In **Budget First** mode:\
+  `internetPrice = "1-" + rounded mainValue` (buying power)
+- In **Vehicle First** mode:\
+  `internetPrice = "1-" + rounded vehiclePrice`
+
+The CTA href is built as:
+
+```ts
+`${domainUrl}/all-inventory/index.htm?internetPrice=${internetPriceParam}`
+```
+
+This assumes the SRP supports `?internetPrice=min-max` filtering where `1` is the minimum.
+
+### “Get Pre-Approved” Button
+
+Links to the financing application URL:
+
+```ts
+href={financingUrl}
+```
+
+Both CTAs open in a new tab (`target="_blank"`, `rel="noopener noreferrer"`).
+
+---
+
+## UX & Visual Design Notes
+
+- Clean, modern layout using Tailwind + shadcn tokens.
+- Sticky right-hand results card on desktop so the main output stays visible while scrolling.
+- Credit tier selector uses colors and subtle animation for active vs inactive states.
+- Advanced tax & fee configuration is hidden behind an expandable “Taxes & Fees (Advanced)” section to keep the main UI simpler.
+- Uses a donut chart to help visually separate principal vs interest or price vs taxes/fees.
+
+---
+
+## Disclaimer
+
+At the bottom of the widget:
+
+> _This calculator is for estimation purposes only and does not constitute a financing offer. Actual terms vary based on creditworthiness and lender criteria._
+
+Dealers should not treat this as an official rate quote. All values are approximate.
+
+---
+
+## Ownership & Versioning
+
+- **Component:** `VehicleBudgetCalculator`
+- **Route:** `app/vehicle-budget-calculator/page.tsx` (or similar)
+- **Owner:** Garber Digital Marketing Team
+- **Primary contact:** Chris Little
+- **Use case:** Embedded budgeting/payment tool for Garber & partner dealership sites.
