@@ -1,11 +1,7 @@
-# GMG Mobile “Call Us” CTA – Technical Documentation  
-**Developed by the Garber Digital Marketing Team**  
-**Last Edited: December 5, 2025 by Chris Little**  
+# GMG Mobile “Call Us” CTA – Technical Documentation
 
-For questions, feature requests, support, or enhancements, please visit:  
-👉 **https://garberspecials.com/support**
-
----
+**Developed by the Garber Digital Marketing Team**\
+**Last Edited: December 5, 2025 by Chris Little**
 
 ## Overview
 
@@ -30,27 +26,23 @@ The script is intended to be loaded via Dealer.com’s **Web Integration API** a
    - Detects debug mode (`#gmgdigitaldebug`).
    - Loads CTA CSS via Web Integration API.
    - Load page data (`detailPage`, `layoutType`, `accountId`).
-
 2. **DDC Website ID & Time Zone Resolution**
    - Uses domain → DDC ID mapping.
    - Uses domain → time zone mapping:
      - Default: Eastern (`America/New_York`)
      - Sunrise Chevrolet: Central (`America/Chicago`)
-
 3. **Operating Hours Check**
    - Calls DDC POST endpoint to fetch store hours.
    - Prioritizes:
-     1. `SALES` hours  
-     2. `DEALERSHIP` hours  
+     1. `SALES` hours
+     2. `DEALERSHIP` hours
      3. Default fallback: **8am–6pm local time**
    - If closed → CTA NOT shown.
-
-4. **Phone Number Resolution**
+1. **Phone Number Resolution**
    - Tries to extract phone from DNI cookie (`ai-dni`).
    - If unavailable → use domain-specific fallback phone.
    - If still empty → no CTA injected.
-
-5. **CTA Injection**
+2. **CTA Injection**
    - Uses Web Integration API (`API.insert` + `API.append`) to inject CTA.
    - CTA links to `tel:{phoneNumber}`.
 
@@ -72,7 +64,7 @@ Required global objects/services:
 
 ### External Resources
 
-- CTA CSS file:  
+- CTA CSS file:\
   `https://assets.garberauto.com/assets/css/gmg-mobile-call-us.css`
 
 ### Browser APIs
@@ -107,11 +99,13 @@ POST /api/widget/ws-site-text-search/addData/{ddcId}/not-apple-mobile-device/{dd
 ```
 
 Body:
+
 ```json
 { "timeout": 200 }
 ```
 
 Headers:
+
 ```json
 { 
   "Content-Type": "application/json",
@@ -121,8 +115,8 @@ Headers:
 
 ### Department Selection Order
 
-1. **SALES**  
-2. **DEALERSHIP**  
+1. **SALES**
+2. **DEALERSHIP**
 3. **Fallback 8am – 6pm local time**
 
 Handles multiple response shapes:
@@ -132,7 +126,7 @@ Handles multiple response shapes:
 
 ### Time‑Zone‑Aware Evaluation
 
-- Uses dealership’s local time via `Intl.DateTimeFormat`  
+- Uses dealership’s local time via `Intl.DateTimeFormat`
 - Parses open/close strings like `"8:30 am - 8:00 pm"`
 
 ---
@@ -155,18 +149,18 @@ Disable CTA altogether:
 
 ## Support & Future Enhancements
 
-This script is actively maintained by the **Garber Digital Marketing Team**.  
+This script is actively maintained by the **Garber Digital Marketing Team**.\
 For:
 
-- Bug reports  
-- Feature requests  
-- Enhancements  
-- Technical guidance  
-- Documentation updates  
+- Bug reports
+- Feature requests
+- Enhancements
+- Technical guidance
+- Documentation updates
 
 Visit:
 
-👉 **https://garberspecials.com/support**
+👉 [**https://garberspecials.com/support**](https://garberspecials.com/support)
 
 ---
 
@@ -174,12 +168,12 @@ Visit:
 
 This script provides a production‑grade, time‑zone‑aware, DNI‑aware mobile Call Us button that:
 
-- Respects dealership business hours  
-- Correctly interprets Sales and Dealership hours  
-- Falls back gracefully on malformed/missing data  
-- Ensures the CTA only appears when appropriate  
-- Integrates cleanly with Dealer.com’s Web Integration API  
+- Respects dealership business hours
+- Correctly interprets Sales and Dealership hours
+- Falls back gracefully on malformed/missing data
+- Ensures the CTA only appears when appropriate
+- Integrates cleanly with Dealer.com’s Web Integration API
 
-Maintained and updated by  
-**Garber Digital Marketing Team**  
+Maintained and updated by\
+**Garber Digital Marketing Team**\
 _Last Edited: December 5, 2025 — Chris Little_
