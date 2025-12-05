@@ -1,0 +1,161 @@
+---
+title: "GMG Mobile “Call Us” CTA – Technical Documentation"
+---
+
+## Overview
+
+This script injects a **mobile-only “Call Us” CTA button** into Dealer.com Vehicle Detail Pages (VDPs).
+
+It is designed to:
+
+- Only appear on **mobile VDPs**
+- Only appear when the **dealership is currently open** (based on hours from a DDC widget API)
+- Use a **Dynamic Number Insertion (DNI)** phone number if available, otherwise fall back to a **host → static phone** mapping
+- Respect dealer **time zones** (Eastern vs Central)
+- Provide detailed debugging output when `#gmgdigitaldebug` is present in the URL
+
+The script is intended to be loaded via Dealer.com’s **Web Integration API** and executed in the browser as an immediately-invoked async function.
+
+---
+
+## High-Level Flow
+
+1. **Early Exit Checks**
+   - If the URL hash contains `#gmgdigitalmobilectadisable`, the script logs and exits.
+   - Script resolves the current domain (`host`) and checks for debug mode (`#gmgdigitaldebug`).
+   - It initializes the Dealer.com `APILoader` and loads a CSS file for CTA styling.
+   - It fetches `pageData` via `API.utils.getPageData()` and exits unless:
+     - The page is a **detailPage** (VDP)
+     - The layout is **mobile**
+2. **Determine DDC Website ID & Time Zone**
+   - Uses a `domainToDdcId` map to resolve a DDC website ID for each domain.
+   - If no mapping is found, falls back to `pageData.accountId`.
+   - Uses `domainToTimeZone` to determine the time zone:
+     - Most stores: `America/New_York`
+     - `sunrisechevrolet.com`: `America/Chicago`
+3. **Determine if the Dealership is Open**
+   - Calls `isSalesOpenNow()`, which:
+     - Requests hours from the DDC Site Text Search widget via a **POST** request.
+     - Prefers the `SALES` department hours; if missing, falls back to `DEALERSHIP` department hours.
+     - If hours are missing or cannot be parsed, falls back to a default **8am–6pm** rule in the dealership’s time zone.
+   - If the dealership is considered **closed**, the script exits and does not inject the CTA.
+4. **Resolve Phone Number**
+   - Attempts to extract a phone number from the **`ai-dni cookie`** (DNI).
+   - If DNI is not available, falls back to a **domain-specific static phone number** via `fallbackPhones`.
+   - If a usable phone number still cannot be determined, the script exits.
+5. **Inject CTA**
+   - Uses `API.insert("vehicle-ctas", ...)` to append an `<a>` CTA element into the `vehicle-ctas` insertion point.
+   - CTA is styled with `gmg-mobile-callus-cta` classes and uses the loaded CSS file.
+   - The `href` is set to `tel:{phone}`, with extra attributes for analytics/identification.
+
+---
+
+## Dependencies
+
+### External / Platform Dependencies
+
+- **Dealer.com Web Integration API**
+  - `window.DDC.APILoader` must exist.
+  - Script calls:
+    - `APILoader.create()`
+    - `API.loadCSS(url)`
+    - `API.utils.getPageData()`
+    - `API.insert(target, callback)`
+    - `API.append(elem, child)`
+- **CSS Asset**
+  - The script expects this stylesheet to exist and define the CTA styles: https://assets.garberauto.com/assets/css/gmg-mobile-call-us.css
+- **Browser APIs**
+  - `fetch` for API calls
+  - `Intl.DateTimeFormat` for time zone–aware date/time calculations
+  - `document.cookie` for reading the `ai-dni` cookie
+  - DOM APIs for creating/appending elements
+
+### Internal Data Structures
+
+- `fallbackPhones`: maps `hostname` → static 10-digit phone number.
+- `domainToDdcId`: maps `hostname` → DDC website ID.
+- `domainToTimeZone`: maps `hostname` → IANA time zone string.
+- `DEFAULT_TIME_ZONE`: `America/New_York`.
+
+---
+
+## Conditions for CTA Injection
+
+The CTA is only rendered if **all** of the following are true:
+
+1. URL does **not** contain `#gmgdigitalmobilectadisable`
+2. Page is a **VDP**
+3. Layout is **mobile**
+4. Dealership is **open** (Sales hours or Dealership hours, with fallback)
+5. A phone number is available (DNI or fallback)
+
+---
+
+## Hours Logic
+
+### Data Source
+
+POST request to:
+
+```
+/api/widget/ws-site-text-search/addData/{ddcId}/not-apple-mobile-device/{ddcId}/en_US/ws-site-text-search
+```
+
+Body:
+
+```json
+{ "timeout": 200 }
+```
+
+Headers:
+
+```json
+{ "Content-Type": "application/json", "Accept": "application/json" }
+```
+
+### Hour Selection Order
+
+1. `SALES` hours (preferred)
+2. `DEALERSHIP` hours (fallback)
+3. Default 8am–6pm rule if both missing or unparseable
+
+---
+
+## Time Zone Handling
+
+- Default: **America/New_York**
+- `sunrisechevrolet.com`: **America/Chicago**
+
+All time parsing, comparisons, and hour-based decisions use the store’s local time.
+
+---
+
+## Debugging
+
+Enable verbose debugging by adding:
+
+```
+#gmgdigitaldebug
+```
+
+to the URL.
+
+Disabling CTA entirely:
+
+```
+#gmgdigitalmobilectadisable
+```
+
+---
+
+## Summary
+
+This script provides a robust, production-grade mobile CTA that:
+
+- Respects operating hours
+- Correctly handles differing time zones
+- Uses DNI phone numbers when available
+- Falls back gracefully
+- Uses Dealer.com Web Integration API best practices
+
+It improves UX by only showing a Call CTA when the store is truly open.
