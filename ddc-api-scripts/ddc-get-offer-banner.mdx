@@ -1,0 +1,397 @@
+# GMG Universal SRP Get-Offer Banner
+**Version:** 1.0.0  
+**Script Name:** `get-offer.js` (Universal SRP Get-Offer Banner)  
+**Environment:** Dealer.com Web Integration API (SRP / Search Results Page)  
+**Developed by:** Garber Digital Marketing Team  
+**Last Edited By:** Chris Little on 12/5/2025  
+
+---
+
+## 1. Purpose & High-Level Overview
+
+This script injects a **dynamic “Get Offer” promotional banner** on Dealer.com Search Results Pages (SRP).  
+It automatically detects the **most frequently displayed model** on the SRP, checks if there is an **active offer** for that make/model in a **SheetDB-backed Google Sheet**, and then:
+
+1. Renders a responsive banner (desktop & mobile images).
+2. Injects a clean, mobile-friendly modal dialog with an iframe form (`get-your-offer`).
+3. Passes offer and dealership metadata into the iframe via query-string parameters.
+4. Displays model-specific disclaimers near the banner.
+
+The script is designed to be **universal across multiple Garber rooftops** and is fully configurable via `window.GETOFFER_CONFIG` and URL QA parameters.
+
+---
+
+## 2. Dependencies
+
+### 2.1 Required Platform
+- **Dealer.com Web Integration API**
+  - Uses `APILoader` entrypoint from `window.DDC.APILoader`.
+  - Subscribes to:
+    - `page-load-v1`
+    - `dealership-info-v1`
+    - `vehicle-shown-v1`
+    - `vehicle-data-updated-v1`
+
+### 2.2 External Services
+- **SheetDB API**
+  - Base URL default:  
+    `https://sheetdb.io/api/v1/pom19rkndxfuq/search`
+  - Used to look up offer rows for a given `SheetName`, `Make`, `Model`.
+
+- **Hosted Iframe Form**
+  - Default URL:  
+    `https://gmg-digital.vercel.app/get-your-offer`
+  - Accepts query params for `make`, `model`, `offerA`, `offerB`, `offerC`, `ddcId`, `dealership`, `disclaimer`, `webhook`, and `websiteURL`.
+  - Posts `formSubmissionSuccess` via `window.postMessage` on successful submission.
+
+- **Make.com Webhook**
+  - Default URL:  
+    `https://hook.us1.make.com/ibg4n4raea0hao7xv3tqfqaoqwxyu1ea`
+  - Used by the iframe app to push submitted form data.
+
+### 2.3 No SweetAlert2
+Although the config retains `swalCDN` for backward compatibility, the script **no longer uses SweetAlert2**. Instead, it uses a custom, inline modal dialog component.
+
+---
+
+## 3. Configuration & Overrides
+
+### 3.1 `window.GETOFFER_CONFIG`
+
+If `window.GETOFFER_CONFIG` is present, its values override safe defaults. Structure:
+
+```js
+window.GETOFFER_CONFIG = {
+  debug: true, // enable console debug logging
+  restrictToNew: true, // only run banner for NEW inventory
+
+  insertBeforeSelector: '.page-section[data-name="srp-wrapper-listing-inner-inventory-results"]',
+
+  disclaimerTargetSelectorPreferred: '#bannerDisclaimer',
+  disclaimerTargetSelectorFallback: '.content-disclaimer',
+
+  iframeURL: 'https://gmg-digital.vercel.app/get-your-offer',
+  webhookURL: 'https://hook.us1.make.com/...',
+
+  sheetDbBase: 'https://sheetdb.io/api/v1/.../search',
+
+  imageBasePattern: 'https://assets.garberauto.com/specials/{slug1}/model-overview/{kind}/new-{make}-{model}-{slug2}.png',
+  backgroundPattern: 'https://assets.garberauto.com/specials/{slug1}/background/new-{make}-{model}-{slug2}.jpg',
+
+  defaultSlug1: 'garber-chevrolet-saginaw-saginaw-mi',
+  defaultSlug2: 'garber-chevrolet-saginaw',
+  defaultSheetName: 'Garber Chevrolet Saginaw - Saginaw, MI',
+
+  overrides: {
+    accountId: {
+      // 'garberchevroletofsaginawgm': { slug1: '...', slug2: '...', sheetName: '...' }
+    },
+    domain: {
+      // 'garberchevroletsaginaw.com': { slug1: '...', slug2: '...', sheetName: '...' }
+    }
+  }
+};
+```
+
+### 3.2 URL QA Parameters
+
+The script supports **QA overrides** via URL parameters:
+
+- `?getofferSheet=My%20Sheet%20Name`  
+  → overrides `defaultSheetName`
+- `?getofferSlug1=custom-slug-one`  
+  → overrides `defaultSlug1`
+- `?getofferSlug2=custom-slug-two`  
+  → overrides `defaultSlug2`
+
+These are useful when validating new sheets or assets without touching the global config.
+
+---
+
+## 4. Event Flow & Core Logic
+
+### 4.1 Initialization
+
+1. Script self-invokes with `(window.DDC.APILoader)`.
+2. Reads external config from `window.GETOFFER_CONFIG` into a `CONFIG` object.
+3. Declares internal state:
+   - `API` (DDC API instance)
+   - `currentKey` (currently rendered `make-model` key)
+   - `accountId`, `dealershipName`, `websiteURL`
+4. Sets up utility functions:
+   - `log` (console debug logger)
+   - `dash` (kebab-case normalizer)
+   - Helpers for images, SheetDB fetch, banner rendering, disclaimer insertion, and modal lifecycle.
+
+### 4.2 Subscribing to Dealer.com Events
+
+On successful `APILoader.create()`:
+
+- Subscribes to `page-load-v1`:
+  - Ensures we are on `searchPage` (SRP). If not, aborts.
+  - Captures `accountId` and `defaultDomain` to derive `websiteURL`.
+  - Calls `pickSiteConfig` to fetch per-site overrides (if any).
+  - Subscribes to:
+    - `dealership-info-v1` (for nicer `dealershipName`)
+    - `vehicle-shown-v1`
+    - `vehicle-data-updated-v1`
+
+These vehicle events drive the **model selection** and **banner rendering** process.
+
+### 4.3 Model Selection Strategy
+
+The `handle(event)` function:
+
+1. Extracts `vehicleData` array from `event.payload`, if present.
+2. If `vehicleData` exists:
+   - Calls `chooseMostFrequent(vehicleData)`:
+     - Builds a frequency map (`key = make-model` in lowercase).
+     - Adds a **boost** of `+10` for vehicles marked `inView`, `isActive`, `selected`, or `isPrimary`.
+     - Selects the **highest score** as the chosen model.
+3. If `vehicleData` is absent but `payload.make`/`payload.model` exist:
+   - Uses that single vehicle as `chosen`.
+4. If `restrictToNew` is true:
+   - Only proceeds if `chosen.inventoryType === 'new'` (case-insensitive).  
+5. Prevents redundant work by comparing `chosen.key` to `currentKey`.
+6. Manages a `runId` to prevent race conditions during async fetches.
+
+Result: We always pick the **most prominent (and usually most in-view) model** on the SRP for the banner.
+
+---
+
+## 5. SheetDB Data Flow
+
+### 5.1 Model Normalization for SheetDB
+
+The script normalizes model names for SheetDB queries via `normalizeModelForSheet(make, model)`. Examples:
+
+- **Chevrolet**
+  - `"Silverado 2500 HD"` → `"Silverado 2500HD"`
+- **GMC**
+  - `"Sierra 2500 HD"` → `"Sierra 2500HD"`
+  - `"Sierra 3500 HD"` → `"Sierra 3500HD"`
+
+If no special case is found, it uses the original model string.
+
+### 5.2 SheetDB Fetch & Caching
+
+`fetchSheetRow({ sheetName, make, model })`:
+
+- Constructs a cache key: `sheetName|||make|||model`.
+- If present in `sheetCache`, returns cached row.
+- Otherwise:
+  - Calls `GET {sheetDbBase}?sheet=<sheetName>&Make=<make>&Model=<model>`.
+  - Expects an array of rows.
+  - Uses the **first row** (`rows[0]`) as the active configuration for that model.
+  - Caches the result for subsequent queries.
+
+### 5.3 Row Validation
+
+A row is considered **eligible for display** only if:
+
+- `row.Expired === 'Active'`
+- `row.Status === 'Enabled'`
+
+If these conditions are not met, the script:
+
+- Clears the banner container.
+- Resets inline styles/click handlers.
+- Collapses the container so no white space remains above SRP results.
+
+---
+
+## 6. Banner Rendering & Skeleton Loader
+
+### 6.1 Banner Container
+
+`getOrCreateBannerContainer()`:
+
+- Finds the SRP section using `CONFIG.insertBeforeSelector` (default: the inner inventory results wrapper).
+- Inserts a new `div#getOfferBanner` **before** that section, if not already present.
+- Ensures the banner area is separate and controllable, without colliding with native markup.
+
+### 6.2 Skeleton State
+
+`showBannerSkeleton(container)`:
+
+- Displays the banner container.
+- Locks its height based on a previously stored `data-last-height` (if available).
+- Inserts a `<div class="go-skel">` shimmering skeleton overlay while the real banner image is being probed.
+
+### 6.3 Collapsing (Hide) State
+
+`hideBannerContainer(container)`:
+
+- Sets `display: none` to fully collapse the container.
+- Clears `innerHTML`, background images, cursor, and click handlers.
+- Resets height to allow SRP content to shift up naturally.
+
+Used when:
+- SheetDB has no active row.
+- Image probe fails (404, etc.).
+- There’s a runtime error during load.
+
+### 6.4 Final Banner Render
+
+`renderBanner(container, { desktop, mobile, background, click })`:
+
+- Renders a `<picture>` with:
+  - `<source media="(max-width: 768px)" srcset="...mobile">`
+  - `<img src="...desktop">`
+- Applies `background` image if provided.
+- Attaches `click` handler (opens modal).
+- Uses `requestAnimationFrame` + image `load` event to reset height and store `data-last-height` for smoother skeleton transitions.
+
+---
+
+## 7. Modal Dialog & Iframe Form
+
+### 7.1 Modal Structure
+
+`ensureGetOfferModal()`:
+
+- Injects a **single** reusable modal into `<body>`:
+  - `.getoffer-modal` (backdrop + dialog wrapper)
+  - `.getoffer-modal-card` (card container)
+  - Header:
+    - `.getoffer-modal-title`
+    - Close button `✕`
+  - Body → `.getoffer-modal-iframe-wrapper` (holds iframe)
+
+### 7.2 Styles & Responsiveness
+
+`ensureGetOfferStyles()` injects a `<style>` tag with:
+
+- Skeleton CSS (`@keyframes getoffer-shimmer`).
+- Modal layout, backdrop, and card styling.
+- A responsive iframe wrapper:
+
+  ```css
+  .getoffer-modal-iframe-wrapper {
+    height: calc(100vh - 140px);
+    max-height: 1000px;
+    }
+  .getoffer-modal-iframe-wrapper iframe {
+    width: 100%;
+    height: 100%;
+  }
+
+  @media (max-width: 768px) {
+    .getoffer-modal-iframe-wrapper {
+      height: calc(100vh - 110px);
+      max-height: none;
+    }
+  }
+  ```
+
+This ensures the form uses most of the viewport while avoiding scroll traps and maintaining usability on both mobile and desktop.
+
+### 7.3 Opening the Dialog
+
+`openDialog({...})`:
+
+1. Creates a `URL` based on `CONFIG.iframeURL`.
+2. Appends query params:
+   - `make`, `model`, `offerA`, `offerB`, `offerC`
+   - `ddcId` (lowercased)
+   - `dealership` (friendly name)
+   - `disclaimer`
+   - `webhook` (Make.com URL)
+   - `websiteURL` (current rooftop site)
+3. Ensures modal and styles exist.
+4. Creates an iframe if needed, or reuses the existing one.
+5. Sets `iframe.src` to the composed URL.
+6. Displays modal and adds `.getoffer-modal-open` to `<body>`.
+
+### 7.4 Handling Form Submission
+
+The script listens to `window.postMessage` for `event.data === 'formSubmissionSuccess'` from the iframe origin.
+
+On success:
+
+- Waits 3 seconds.
+- Closes the modal and removes the `message` handler for cleanliness.
+
+---
+
+## 8. Disclaimer Injection
+
+`setDisclaimerText(text)`:
+
+1. Tries the **preferred selector**: `CONFIG.disclaimerTargetSelectorPreferred` (default: `#bannerDisclaimer`).  
+   - If found, sets `textContent` and toggles `display` based on text presence.
+2. If preferred is not found:
+   - Looks for fallback container: `CONFIG.disclaimerTargetSelectorFallback` (default: `.content-disclaimer`).
+   - Removes any existing `#activeDisclaimer` node.
+   - Appends a new `<p id="activeDisclaimer">` with the disclaimer text.
+
+This allows each rooftop to maintain its own preferred disclaimer placeholder without editing the script.
+
+---
+
+## 9. Error Handling & Safety
+
+- All top-level logic is wrapped in a `try/catch` around `APILoader.create()`:
+  - Logs `"Error initializing DDC API:"` if the Web Integration API fails.
+- SheetDB fetch issues:
+  - Log to console (`'SheetDB error:'`).
+  - Unlock height and fully hide the banner container to avoid layout issues.
+- Image failures:
+  - If desktop banner image fails to load:
+    - Clears the container.
+    - Hides the banner area.
+    - Resets `currentKey` to allow retries on subsequent model-change events.
+
+There is **no hard dependency on SweetAlert2** or other external popups, minimizing the chance of UI collisions.
+
+---
+
+## 10. Customization Notes
+
+- **Per-dealership overrides** should be managed via `overrides.accountId` or `overrides.domain` in `window.GETOFFER_CONFIG`.
+- **Design tweaks** can be safely done by updating the CSS within `ensureGetOfferStyles()`. Keep class names stable for maintainability.
+- **Additional query params** can be appended in `openDialog()` as needed for future form enhancements.
+
+When modifying:
+- Avoid changing event names (`page-load-v1`, `vehicle-shown-v1`, etc.).
+- Preserve `hideBannerContainer` and skeleton logic so SRP spacing remains clean.
+
+---
+
+## 11. QA & Testing Checklist
+
+Before deploying to a new rooftop:
+
+1. **SRP presence**
+   - Confirm the script only runs on SRP (`searchPage === true`).
+2. **Model detection**
+   - Verify that scrolling/filters still result in the correct most-frequent model.
+3. **New/Used restriction**
+   - Toggle `restrictToNew` and confirm used-only SRPs behave as expected (banner hidden when appropriate).
+4. **SheetDB wiring**
+   - Confirm correct `SheetName` via:
+     - `window.GETOFFER_CONFIG.defaultSheetName`, or
+     - URL param `getofferSheet`.
+   - Verify the row’s `Expired` and `Status` fields are set for active banners.
+5. **Imagery**
+   - Ensure the banner images exist at the configured patterns for the chosen model.
+6. **Modal / Form**
+   - Verify iframe loads and submits correctly.
+   - Ensure `formSubmissionSuccess` closes the modal after 3 seconds.
+7. **Disclaimer**
+   - Confirm disclaimers show in the correct container and update when the chosen model changes.
+
+---
+
+## 12. Ownership & Support
+
+This script is **developed and maintained by the Garber Digital Marketing Team**.  
+It was **last edited by Chris Little on 12/5/2025**.
+
+For:
+- Questions
+- Feature requests
+- Bug reports
+- General support
+
+Please visit: **[garberspecials.com/support](https://garberspecials.com/support)** and submit a ticket referencing **“Universal SRP Get-Offer Banner (get-offer.js)”**.
