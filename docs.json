@@ -12,6 +12,20 @@
         "pages": [
           "introduction"
         ]
+      },
+      {
+        "group": "DDC API",
+        "pages": [
+          "ddc-api-scripts/ddc-get-offer-banner",
+          "ddc-api-scripts/garber-buick-gmc-market-value-srp",
+          "ddc-api-scripts/mobile-call-us-cta"
+        ]
+      },
+      {
+        "group": "Internal Flows",
+        "pages": [
+          "internal-flows/gm-maap-garber-buick-gmc"
+        ]
       }
     ]
   }
