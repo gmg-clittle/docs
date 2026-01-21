@@ -28,5 +28,16 @@
         ]
       }
     ]
+  },
+  "appearance": {
+    "strict": false
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Support",
+        "href": "https://www.garberspecials.com/support-request/"
+      }
+    ]
   }
 }
