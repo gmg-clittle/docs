@@ -1,0 +1,366 @@
+---
+title: "GM MAAP Price Calculation & Export Workflow"
+description: "End-to-end process for calculating GM MAAP (Minimum Allowable Advertised Price) and exporting to HomeNet Custom1 → vAuto Employee Price for Garber Buick GMC."
+---
+
+<CardGroup>
+  <Card title="Office Team SOP" icon="clipboard-check" href="#office-team-sop">
+    
+  </Card>
+  <Card title="Apps Script Workflow" icon="code" href="#google-sheets-apps-script-maap-engine">
+    
+  </Card>
+  <Card title="MAAP Formula" icon="calculator" href="#maap-calculation-logic">
+    
+  </Card>
+  <Card title="Export to vAuto" icon="arrow-right-left" href="#export-and-import-homenet--vauto">
+    
+  </Card>
+</CardGroup>
+
+<Info>
+  This documentation describes the **production workflow** used by Garber Buick GMC to calculate GM MAAP pricing and export the final value into **vAuto → Employee Price** via **HomeNet Custom1**.
+</Info>
+
+---
+
+## Data flow
+
+```
+GM Invoice → CDK → HomeNet → Google Sheets (Apps Script) → GarberAuto.com Inventory API → Google Sheets → SFTP → HomeNet → vAuto
+```
+
+<Note>
+  The MAAP engine is implemented in the Google Sheets Apps Script: **“MAAP Launch Vehicle Price Calculator for Garber Buick GMC”** and is executed via `runMaapCalculation()`.
+</Note>
+
+---
+
+## Office Team SOP
+
+<Steps>
+  <Step title="Locate the GM Invoice">
+    Open the GM invoice for the applicable new vehicle (MAAP-eligible model).
+  </Step>
+  <Step title="Find the Acct 237 / 231 value">
+    Identify the **Acct 237 / 231** price on the invoice (this is the input used as the MAAP invoice basis).
+  </Step>
+  <Step title="Enter the value in CDK">
+    Enter the Acct 237 / 231 value into **CDK Field 21 (CITY)** for the vehicle.
+  </Step>
+</Steps>
+
+<Warning>
+  If **Field 21 (CITY)** is not populated for an eligible vehicle, the MAAP engine may fall back to HomeNet’s `Invoice` value, which can cause MAAP output differences.
+</Warning>
+
+---
+
+## Field mapping and conversion
+
+### CDK → HomeNet mapping
+
+| Source (CDK)    | Target (HomeNet) | Meaning                               |
+| --------------- | ---------------- | ------------------------------------- |
+| Field 21 (CITY) | Original Invoice | Holds GM Invoice Acct 237 / 231 value |
+
+### HomeNet conversion
+
+HomeNet applies a conversion rule that copies:
+
+```
+Original Invoice → Comment1
+```
+
+<Tip>
+  The Apps Script is configurable for which column contains the Acct 237/231 value via the **MAAP_Settings** key: `Acct237FieldName` (default in the script settings: `Comment 18`).
+</Tip>
+
+---
+
+## Google Sheets Apps Script MAAP engine
+
+This workflow is driven by the Apps Script header:
+
+```js
+/**
+ * MAAP Launch Vehicle Price Calculator for Garber Buick GMC
+ *
+ * Creates:
+ *  - "MAAP_Settings" sheet (if missing) for configuration (styled)
+ *  - "MAAP_Raw_Feed" sheet (raw HomeNet CSV, styled)
+ *  - "MAAP_Launch_Pricing" sheet (full results, styled)
+ *  - "MAAP_Custom1" sheet (VIN + MAAP Launch Vehicle Price as Custom1; minimal styling)
+ *  - "MAAP_Run_History" sheet (per-run summary log, styled)
+ *
+ * Can be run manually or via time-driven trigger.
+ */
+```
+
+### Script entry points
+
+- **Manual runs (menu):** `onOpen()` adds **MAAP Tools → Run MAAP Calculation**
+- **Main job:** `runMaapCalculation()`
+- **Initialize settings:** `initMaapSettingsSheet()` (also auto-called if missing)
+
+---
+
+## MAAP_Settings configuration
+
+The script stores all configuration in **MAAP_Settings** and reads it using `getMaapSettings_()`.
+
+### Key settings
+
+| Setting Key          | Purpose                                                | Script default     |
+| -------------------- | ------------------------------------------------------ | ------------------ |
+| `FeedUrl`            | HomeNet full inventory feed URL                        | `DEFAULT_FEED_URL` |
+| `Acct237FieldName`   | Column name for Acct 237/231 (from HomeNet conversion) | `Comment 18`       |
+| `HoldbackFieldName`  | Column name for holdback                               | `Misc_Price2`      |
+| `BookValueFieldName` | Column name for HomeNet book value                     | `BookValue`        |
+| `TypeFieldName`      | Column name for vehicle type                           | `Type`             |
+| `ModelFieldName`     | Column name for model                                  | `Model`            |
+| `Custom1FlatBuffer`  | Flat buffer added to MAAP before export                | `0`                |
+
+### MAAP model rules
+
+The script processes **New** vehicles that match the “ModelsToInclude” rules table:
+
+| Make | Year | Model | TrimContains |
+| ---- | ---- | ----- | ------------ |
+
+<Note>
+  If model rules exist, only vehicles matching at least one rule are processed. (If rules are empty, the script would process all New vehicles.)
+</Note>
+
+---
+
+## Inventory feed import (HomeNet CSV)
+
+The script downloads and parses the HomeNet CSV via:
+
+- `fetchInventoryCsv_(feedUrl)`
+- `Utilities.parseCsv(text, ',')`
+
+It writes the raw result into:
+
+- **MAAP_Raw_Feed** (styled table)
+
+### Feed column requirements
+
+The script validates the presence of:
+
+- `VIN`
+- `MSRP`
+- `Invoice`
+- `Type` (configurable via `TypeFieldName`)
+- `Model` (configurable via `ModelFieldName`)
+- Book value (configurable via `BookValueFieldName`)
+- Acct 237 value (configurable via `Acct237FieldName`)
+- Holdback (configurable via `HoldbackFieldName`)
+
+<Warning>
+  If any required column is missing, the run is marked **FAILED** and logged in **MAAP_Run_History**.
+</Warning>
+
+---
+
+## GarberAuto.com API call per VIN
+
+For each eligible VIN, the script calls:
+
+```
+https://www.garberauto.com/apis/widget/INVENTORY_LISTING_DEFAULT_AUTO_ALL:inventory-data-bus1/getInventory?search={VIN}
+```
+
+Function: `fetchConsumerOffersForVin_(vin)`
+
+### What the script extracts
+
+<Tabs>
+  <Tab title="Final Price">
+    The script looks for `pricing.dprice[]` where `isFinalPrice === true`. If missing, it falls back to `pricing.finalPrice`, then `pricing.msrp`.
+  </Tab>
+  <Tab title="Consumer Incentives (Everyone)">
+    The script sums incentives where:
+
+    - `conditional === false`
+    - `specific._type === "CASH"`
+    - sum of `specific.cashOption`
+  </Tab>
+  <Tab title="Conquest / Loyalty (Max)">
+    The script uses the **max** cash option among incentives where the title contains:
+
+    - "Eligible Non-GM Owners and Lessees" OR
+    - "Eligible GM Owners and Lessees" and `specific._type === "CASH"`.
+  </Tab>
+  <Tab title="CTP Detection">
+    The script sets `isCtp = true` when `optionCodes` contains `RtlStkCTP`.
+  </Tab>
+</Tabs>
+
+<Note>
+  API issues do not hard-fail the run. The VIN is logged in output with a `DDC/API Error` value and counted in `API Error Count`.
+</Note>
+
+---
+
+## MAAP calculation logic
+
+### Base invoice selection (script behavior)
+
+The script uses **Acct 237/231** when available; otherwise it falls back to HomeNet Invoice:
+
+- If Acct 237 value (`Acct237FieldName`) is a number \> 0 → **Base Invoice = Acct 237**
+- Else → **Base Invoice = HomeNet Invoice**
+
+### MAAP formulas
+
+<Tabs>
+  <Tab title="Non-CTP Vehicles">
+    ```text
+    MAAP = Base Invoice + Holdback − Consumer Incentives − Conquest/Loyalty
+    ```
+  </Tab>
+  <Tab title="CTP Vehicles">
+    ```text
+    MAAP (CTP) = Base Invoice − Consumer Incentives − Conquest/Loyalty
+    ```
+
+    <Info>
+      For CTP vehicles, the script excludes holdback from the MAAP math.
+    </Info>
+  </Tab>
+</Tabs>
+
+---
+
+## Below-MAAP alerts and visual highlighting
+
+The script generates an alert when either is below MAAP:
+
+- DDC Final Price \< MAAP
+- HomeNet Book Value \< MAAP
+
+The alert is written to the **Below MAAP Alert** column and visually highlighted by:
+
+- `highlightAlerts_(sheet)`
+
+---
+
+## Output sheets
+
+### MAAP_Launch_Pricing (full results)
+
+This sheet is the primary “audit view” of each VIN’s inputs, API outputs, calculation details, and alert state.
+
+### MAAP_Custom1 (export payload)
+
+This sheet contains exactly:
+
+| VIN | Custom1 |
+| --- | ------- |
+
+#### Custom1 eligibility rules (script behavior)
+
+A VIN is included only if:
+
+- Base Invoice is valid and \> 0
+- Holdback is valid and \> 0\
+  (CTP vehicles still require holdback to be present in the feed, even though it is not added)
+- MAAP result is a valid number
+
+#### Buffer + rounding
+
+The export applies:
+
+1. Flat buffer:
+   - `bufferedMaap = maapPrice + Custom1FlatBuffer`
+2. Rounded Custom1:
+   - `Custom1 = Math.round(bufferedMaap)`
+
+---
+
+## Webhook notification after Custom1 updates
+
+After updating **MAAP_Custom1**, the script sends a webhook:
+
+- Function: `sendCustom1Webhook_()`
+- Payload:
+
+  ```json
+  { "updated": true }
+  ```
+
+<Note>
+  Webhook errors are swallowed intentionally so that MAAP calculation runs do not fail due to downstream automation outages.
+</Note>
+
+---
+
+## Export and import (HomeNet → vAuto)
+
+### SFTP export to HomeNet
+
+**System:** Google Sheets → SFTP → HomeNet\
+**Payload:** MAAP_Custom1 (VIN + Custom1)
+
+HomeNet ingests the file and maps the value into **HomeNet Custom1**.
+
+### vAuto import
+
+HomeNet’s **Custom1** value is imported into:
+
+- **vAuto → Employee Price**
+
+<Check>
+  At this point, vAuto has a per-VIN MAAP value usable for Vehicle Groups pricing logic and MAP compliance workflows.
+</Check>
+
+---
+
+## Run history and monitoring
+
+The script logs each run into:
+
+- **MAAP_Run_History**
+
+Including:
+
+- Timestamp
+- Status (SUCCESS / FAILED)
+- Processed VIN count
+- Alert count
+- API error count
+- Custom1 row count
+- Flat buffer value
+- Notes
+
+---
+
+## Responsibility matrix
+
+| Phase                                       | System                       | Owner                      |
+| ------------------------------------------- | ---------------------------- | -------------------------- |
+| Invoice Price Entry (Acct 237/231)          | CDK                          | Office Team                |
+| Field Mapping (Field 21 → Original Invoice) | CDK → HomeNet                | Integrations               |
+| Conversion (Original Invoice → Comment1)    | HomeNet                      | Integrations               |
+| MAAP Calculation                            | Google Sheets Apps Script    | GMG Digital                |
+| Incentive/CTP Retrieval                     | GarberAuto.com Inventory API | GMG Digital                |
+| Export payload sheet                        | Google Sheets                | GMG Digital                |
+| SFTP export                                 | Sheets/Automation → HomeNet  | GMG Digital / Integrations |
+| vAuto import                                | HomeNet → vAuto              | vAuto / GMG Digital        |
+
+---
+
+## Glossary
+
+| Term         | Definition                                             |
+| ------------ | ------------------------------------------------------ |
+| MAAP         | Minimum Allowable Advertised Price                     |
+| Acct 237/231 | GM invoice accounting field used as MAAP invoice basis |
+| CDK          | Dealership DMS                                         |
+| HomeNet      | Inventory syndication platform                         |
+| Custom1      | HomeNet custom field used for export/import to vAuto   |
+| vAuto        | Vehicle merchandising and pricing platform             |
+| CTP          | Courtesy Transportation Program                        |
+| GMG Digital  | Garber internal digital marketing/development team     |
