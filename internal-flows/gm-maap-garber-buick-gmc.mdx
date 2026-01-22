@@ -19,7 +19,7 @@ description: "End-to-end process for calculating GM MAAP (Minimum Allowable Adve
 </CardGroup>
 
 <Info>
-  This documentation describes the **production workflow** used by Garber Buick GMC to calculate GM MAAP pricing and export the final value into **vAuto → Employee Price** via **HomeNet Custom1**.
+  This documentation describes the **production workflow** used by Garber Buick GMC to calculate GM MAAP pricing and export the final value into **vAuto → Employee Price**.
 </Info>
 
 ---
@@ -288,14 +288,13 @@ After updating **MAAP_Custom1**, the script sends a webhook:
 
 ### SFTP export to HomeNet
 
-**System:** Google Sheets → SFTP → HomeNet via [Make.com](http://Make.com) Scenario (https://us1.make.com/138467/scenarios/4511842/edit)\
-**Payload:** MAAP_Custom1 (VIN + Custom1)
+**System:** Google Sheets → SFTP → HomeNet via [Make.com](http://Make.com) Scenario (https://us1.make.com/138467/scenarios/4511842/edit)\\ **Payload:** MAAP_Custom1 (VIN + Custom1)
 
 HomeNet ingests the file and maps the value into **Employee Price**.
 
 ### vAuto import
 
-HomeNet’s **Employee Price **value is imported into:
+HomeNet’s \*\*Employee Price \*\*value is imported into:
 
 - **vAuto → Employee Price**
 
