@@ -50,12 +50,6 @@ GM Invoice → CDK → HomeNet → Google Sheets (Apps Script) → GarberAuto.co
   </Step>
 </Steps>
 
-<Warning>
-  If **Field 21 (CITY)** is not populated for an eligible vehicle, the MAAP engine may fall back to HomeNet’s `Invoice` value, which can cause MAAP output differences.
-</Warning>
-
----
-
 ## Field mapping and conversion
 
 ### CDK → HomeNet mapping
@@ -73,7 +67,7 @@ Original Invoice → Comment1
 ```
 
 <Tip>
-  The Apps Script is configurable for which column contains the Acct 237/231 value via the **MAAP_Settings** key: `Acct237FieldName` (default in the script settings: `Comment 18`).
+  The Apps Script is configurable for which column contains the Acct 237/231 value via the **MAAP_Settings** key: `Acct237FieldName` (default in the script settings: `Comment1`).
 </Tip>
 
 ---
@@ -114,7 +108,7 @@ The script stores all configuration in **MAAP_Settings** and reads it using `get
 | Setting Key          | Purpose                                                | Script default     |
 | -------------------- | ------------------------------------------------------ | ------------------ |
 | `FeedUrl`            | HomeNet full inventory feed URL                        | `DEFAULT_FEED_URL` |
-| `Acct237FieldName`   | Column name for Acct 237/231 (from HomeNet conversion) | `Comment 18`       |
+| `Acct237FieldName`   | Column name for Acct 237/231 (from HomeNet conversion) | `Comment1`         |
 | `HoldbackFieldName`  | Column name for holdback                               | `Misc_Price2`      |
 | `BookValueFieldName` | Column name for HomeNet book value                     | `BookValue`        |
 | `TypeFieldName`      | Column name for vehicle type                           | `Type`             |
@@ -206,13 +200,6 @@ Function: `fetchConsumerOffersForVin_(vin)`
 
 ## MAAP calculation logic
 
-### Base invoice selection (script behavior)
-
-The script uses **Acct 237/231** when available; otherwise it falls back to HomeNet Invoice:
-
-- If Acct 237 value (`Acct237FieldName`) is a number \> 0 → **Base Invoice = Acct 237**
-- Else → **Base Invoice = HomeNet Invoice**
-
 ### MAAP formulas
 
 <Tabs>
@@ -292,7 +279,7 @@ After updating **MAAP_Custom1**, the script sends a webhook:
   ```
 
 <Note>
-  Webhook errors are swallowed intentionally so that MAAP calculation runs do not fail due to downstream automation outages.
+  This initiates an SFTP export to HomeNet/vAuto for a feed update.
 </Note>
 
 ---
@@ -301,14 +288,14 @@ After updating **MAAP_Custom1**, the script sends a webhook:
 
 ### SFTP export to HomeNet
 
-**System:** Google Sheets → SFTP → HomeNet\
+**System:** Google Sheets → SFTP → HomeNet via [Make.com](http://Make.com) Scenario (https://us1.make.com/138467/scenarios/4511842/edit)\
 **Payload:** MAAP_Custom1 (VIN + Custom1)
 
-HomeNet ingests the file and maps the value into **HomeNet Custom1**.
+HomeNet ingests the file and maps the value into **Employee Price**.
 
 ### vAuto import
 
-HomeNet’s **Custom1** value is imported into:
+HomeNet’s **Employee Price **value is imported into:
 
 - **vAuto → Employee Price**
 
@@ -348,7 +335,7 @@ Including:
 | Incentive/CTP Retrieval                     | GarberAuto.com Inventory API | GMG Digital                |
 | Export payload sheet                        | Google Sheets                | GMG Digital                |
 | SFTP export                                 | Sheets/Automation → HomeNet  | GMG Digital / Integrations |
-| vAuto import                                | HomeNet → vAuto              | vAuto / GMG Digital        |
+| vAuto import                                | HomeNet → vAuto              | vAuto                      |
 
 ---
 
