@@ -39,13 +39,10 @@ GM Invoice → CDK → HomeNet → Google Sheets (Apps Script) → GarberAuto.co
 ## Office Team SOP
 
 <Steps>
-  <Step title="Locate the GM Invoice">
-    Open the GM invoice for the applicable new vehicle (MAAP-eligible model).
-  </Step>
-  <Step title="Find the Acct 237 / 231 value">
+  <Step title="Find the Acct 237 / 231 value" stepNumber={1}>
     Identify the **Acct 237 / 231** price on the invoice (this is the input used as the MAAP invoice basis).
   </Step>
-  <Step title="Enter the value in CDK">
+  <Step title="Enter the value in CDK" stepNumber={2}>
     Enter the Acct 237 / 231 value into **CDK Field 21 (CITY)** for the vehicle.
   </Step>
 </Steps>
@@ -288,7 +285,7 @@ After updating **MAAP_Custom1**, the script sends a webhook:
 
 ### SFTP export to HomeNet
 
-**System:** Google Sheets → SFTP → HomeNet via [Make.com](http://Make.com) Scenario (https://us1.make.com/138467/scenarios/4511842/edit)\\ **Payload:** MAAP_Custom1 (VIN + Custom1)
+**System:** Google Sheets → SFTP → HomeNet via [Make.com](http://Make.com) Scenario (https://us1.make.com/138467/scenarios/4511842/edit)\\\\ **Payload:** MAAP_Custom1 (VIN + Custom1)
 
 HomeNet ingests the file and maps the value into **Employee Price**.
 
