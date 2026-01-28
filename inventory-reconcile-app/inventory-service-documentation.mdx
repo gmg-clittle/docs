@@ -1,0 +1,100 @@
+---
+title: "Inventory Service"
+description: "Technical documentation for the Inventory Reconciliation and Discrepancy Engine."
+icon: "warehouse"
+---
+
+The `inventoryService` is the core orchestration layer responsible for reconciling data between the Dealership Management System (**CDK**), marketing aggregators (**HomeNet**), and consumer-facing websites (**Dealer.com**).
+
+## System Overview
+
+The service identifies mismatches in vehicle data (price, mileage, status) and tracks the "age" of a discrepancy. It ensures that vehicles are not only physically present but also correctly accounted for in the DMS before being marketed.
+
+### Core Data Sources
+
+| Source      | Role            | Description                                                |
+| :---------- | :-------------- | :--------------------------------------------------------- |
+| **HomeNet** | Marketing Truth | The primary source for vehicle photos and syndication.     |
+| **DDC**     | Consumer Truth  | The live status of the vehicle on the dealership website.  |
+| **CDK**     | Financial Truth | The accounting system containing balances and deal status. |
+
+---
+
+## Business Logic: The CDK Validation
+
+The service runs a "CDK Check" to determine if a vehicle is "Clean." If any of the following rules are violated, the vehicle is flagged with a specific `cdk_issue_type`.
+
+### Validation Rules
+
+<Steps>
+  <Step title="Stock Type Validation">
+    Vehicle must be categorized as `USED`, `NEW`, or `F` (Factory).
+  </Step>
+  <Step title="Status Verification">
+    Must be in status `S` (Stock) or `F` (Factory). Vehicles in other statuses are considered unavailable.
+  </Step>
+  <Step title="Deal Check">
+    If a `deal_no` is present in CDK, the vehicle is considered sold and should not appear as available inventory.
+  </Step>
+  <Step title="Financial Balance">
+    The vehicle must have a `balance > 0`. A zero balance usually indicates an accounting error or a completed sale.
+  </Step>
+  <Step title="Company Mapping">
+    Each dealership name is mapped to a specific CDK Company Code. A mismatch flags an `INVALID_COMPANY` error.
+  </Step>
+</Steps>
+
+---
+
+## Logic Flows
+
+### Discrepancy Detection Pipeline
+
+This flowchart represents the `getInventoryDiscrepancies` logic, which aggregates data and applies the validation rules.
+
+```mermaid
+graph TD
+  A[Start: getInventoryDiscrepancies] --> B[CTE: hn_discrepancies]
+  B --> B1{Compare HN to DDC}
+
+  B1 -- Missing in DDC --> C[MISSING_DDC]
+  B1 -- Type Mismatch --> D[TYPE_MISMATCH]
+  B1 -- Mileage Diff --> E[MILEAGE_MISMATCH]
+
+  C --> F[Join with cdk_inventory_core]
+  D --> F
+  E --> F
+
+  F --> G[Join with discrepancy_annotations]
+  G --> H[Apply CDK Validation Rules]
+  H --> I{Check Conditions}
+
+  I -- Fails Status, Balance, Deal --> J[cdk_check = FALSE]
+  I -- Passes All DMS Rules --> K[cdk_check = TRUE]
+
+  J --> L[Sync State in Database]
+  K --> L
+
+  L --> M[Return DiscrepancyItem Array]
+```
+
+````mermaid
+```mermaid placement="top-right"
+  flowchart LR
+    subgraph subgraph1
+        direction TB
+        top1[top] --> bottom1[bottom]
+    end
+    subgraph subgraph2
+        direction TB
+        top2[top] --> bottom2[bottom]
+    end
+    %% ^ These subgraphs are identical, except for the links to them:
+
+    %% Link *to* subgraph1: subgraph1 direction is maintained
+    outside --> subgraph1
+    %% Link *within* subgraph2:
+    %% subgraph2 inherits the direction of the top-level graph (LR)
+    outside ---> top2
+```
+````

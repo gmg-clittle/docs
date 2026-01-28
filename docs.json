@@ -26,6 +26,12 @@
         "pages": [
           "internal-flows/gm-maap-garber-buick-gmc"
         ]
+      },
+      {
+        "group": "Inventory Reconcile App",
+        "pages": [
+          "inventory-reconcile-app/inventory-service-documentation"
+        ]
       }
     ]
   },
