@@ -1,0 +1,805 @@
+# Garber TalentFlow — Application Documentation
+
+> A secure, role-based Applicant Tracking System (ATS) built for Garber Management Group to streamline hiring across multiple dealership locations.
+
+---
+
+## Table of Contents
+
+1. [Overview](#1-overview)
+2. [Tech Stack](#2-tech-stack)
+3. [Project Structure](#3-project-structure)
+4. [Authentication & Authorization](#4-authentication--authorization)
+5. [Database Schema](#5-database-schema)
+6. [Data Flow Architecture](#6-data-flow-architecture)
+7. [Core Features & Workflows](#7-core-features--workflows)
+8. [View Modes](#8-view-modes)
+9. [Services Layer](#9-services-layer)
+10. [State Management](#10-state-management)
+11. [Component Reference](#11-component-reference)
+12. [Configuration & Deployment](#12-configuration--deployment)
+13. [Error Handling](#13-error-handling)
+14. [Troubleshooting](#14-troubleshooting)
+
+---
+
+## 1. Overview
+
+Garber TalentFlow is a single-page web application that allows hiring staff at Garber Management Group to review, manage, and progress job applicants through a recruitment pipeline. The system supports three user roles — **Admin**, **Manager**, and **Recruiter** — each with different levels of access scoped to specific dealership locations and/or departments.
+
+**Primary functions:**
+- Browse and search applicants across all Garber dealership locations
+- Move applicants through a defined hiring pipeline (New → Reviewing → Interview → Offer → Hired / Rejected)
+- Add internal notes visible only to staff
+- Perform rapid bulk reviews or triage using Focus Mode
+- Manage user access and permissions (Admin only)
+
+---
+
+## 2. Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend framework | React 19.2.4 + TypeScript 5.8 |
+| Build tool | Vite |
+| Styling | Tailwind CSS |
+| Icons | Lucide React |
+| Backend / Auth | Supabase (PostgreSQL + Supabase Auth) |
+| Deployment | Vercel (SPA routing via `vercel.json`) |
+
+---
+
+## 3. Project Structure
+
+```
+garber-talentflow-0.1/
+├── App.tsx                        # Root component; global state, layout, routing
+├── types.ts                       # All TypeScript interfaces and type definitions
+├── main.tsx                       # React entry point
+├── index.html                     # HTML shell
+├── vite.config.ts                 # Vite build config
+├── vercel.json                    # Vercel SPA rewrite rules
+│
+├── components/
+│   ├── Login.tsx                  # Magic link authentication screen
+│   ├── ApplicationCard.tsx        # Compact card used in List View
+│   ├── ApplicationDetail.tsx      # Full candidate profile panel
+│   ├── TableView.tsx              # Spreadsheet-style sortable table view
+│   ├── FocusMode.tsx              # Keyboard-driven rapid review queue
+│   ├── AdminDashboard.tsx         # User/permission management (Admin only)
+│   ├── NotesModal.tsx             # Modal for editing internal notes
+│   ├── MultiSelect.tsx            # Reusable multi-checkbox dropdown
+│   ├── StatusSelect.tsx           # Pipeline stage color-coded dropdown
+│   ├── Button.tsx                 # Reusable button with variants
+│   ├── UIProvider.tsx             # Global toast & dialog context
+│   └── ErrorBoundary.tsx          # Top-level React error boundary
+│
+└── services/
+    ├── supabaseClient.ts          # Supabase client singleton
+    ├── applicationService.ts      # Fetch, update, and map application records
+    ├── userService.ts             # Fetch user role and permissions from DB
+    ├── adminService.ts            # User management, locations, departments, health check
+    └── geminiService.ts           # AI candidate analysis (currently disabled)
+```
+
+---
+
+## 4. Authentication & Authorization
+
+### 4.1 Sign-In Flow (Magic Link)
+
+TalentFlow uses **passwordless authentication** via Supabase OTP (magic links). No passwords are stored or required.
+
+```
+User enters email
+       │
+       ▼
+supabase.auth.signInWithOtp({ email, emailRedirectTo: window.location.origin })
+       │
+       ▼
+Supabase sends magic link email
+       │
+       ▼
+User clicks link → redirected back to app
+       │
+       ▼
+Supabase sets session cookie / token
+       │
+       ▼
+onAuthStateChange fires SIGNED_IN event
+       │
+       ▼
+handleUserSession() called → permissions fetched → user state set
+```
+
+**File:** `components/Login.tsx`
+
+Auth errors (e.g., expired link, signups disabled) are surfaced from the URL hash fragment and displayed to the user with a support link.
+
+---
+
+### 4.2 Session Lifecycle
+
+On app load, `App.tsx` immediately calls `supabase.auth.getSession()` to check for an existing valid session. Simultaneously, a real-time listener is registered via `supabase.auth.onAuthStateChange` to handle the following events:
+
+| Event | Action |
+|---|---|
+| `INITIAL_SESSION` | Load existing session without re-triggering login |
+| `SIGNED_IN` | Fetch permissions, set user in state, load applications |
+| `TOKEN_REFRESHED` | Re-validate session transparently |
+| `SIGNED_OUT` | Clear user state, applications, and bulk selections |
+
+**File:** `App.tsx` lines 105–146
+
+---
+
+### 4.3 Role-Based Access Control (RBAC)
+
+Every authenticated user is assigned a role and a set of optional permission filters.
+
+#### Roles
+
+| Role | Description |
+|---|---|
+| `Admin` | Full access to all applications across all locations and departments. Can manage user permissions. |
+| `Manager` | Access scoped to assigned locations and/or departments. Can update stages and add notes. |
+| `Recruiter` | Same data scope as Manager. Read + update access (no admin panel). |
+
+#### Permission Filters
+
+Non-admin users can be restricted by:
+- **`allowedLocations`** — an array of dealership/location names
+- **`allowedDepartments`** — an array of department names
+
+If both arrays are empty for a non-admin user, they see all applications (full access within their role level).
+
+These filters are fetched on login from the `career_user_assignments` table and applied in the `filteredApplications` memoized computation in `App.tsx`.
+
+#### Super Admin Override
+
+One email address (`clittle@garberauto.com`) is hard-coded as a super admin in `App.tsx`:
+
+```typescript
+const isSuperAdmin = session.user.email === 'clittle@garberauto.com';
+const finalRole = isSuperAdmin ? 'Admin' : (dbRole || 'Recruiter');
+```
+
+This ensures that user always has Admin access even if their database assignment is missing or fails to load.
+
+**File:** `services/userService.ts`, `App.tsx` line 79
+
+---
+
+## 5. Database Schema
+
+All tables live in the Supabase (PostgreSQL) project.
+
+### 5.1 `career_test_dev_applications`
+
+The primary applications table. Each row is one job applicant.
+
+| DB Column | App Field | Description |
+|---|---|---|
+| `Entry Id` | `id` | Primary identifier used for all updates |
+| `Name (First)` | `firstName` | Applicant first name |
+| `Name (Last)` | `lastName` | Applicant last name |
+| `Email` | `email` | Contact email |
+| `Phone` | `phone` | Contact phone |
+| `Job Title` | `jobTitle` | Position applied for |
+| `Location` | `location` | Dealership/location name |
+| `Job Department` | `department` | Department name |
+| `Entry Date` | `dateApplied` | Application submission date |
+| `Upload Resume` | `resumeUrl` | URL to uploaded resume |
+| `Optional Cover Letter / Comments` | `coverLetter` | Freeform cover letter text |
+| `City` | `city` | Applicant city |
+| `State` | `state` | Applicant state |
+| `processing_stage` | `stage` | Current pipeline stage |
+| `internal_notes` | `internalNotes` | Staff-only notes |
+
+**Pipeline stage values:** `New` · `Reviewing` · `Interview` · `Offer` · `Hired` · `Rejected`
+
+> Note: The legacy value `Shortlisted` is automatically normalized to `Reviewing` during data mapping.
+
+---
+
+### 5.2 `career_user_assignments`
+
+Stores user roles and scoped access permissions.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | integer / UUID | Row primary key |
+| `user_id` | UUID | Supabase Auth user ID (foreign key) |
+| `email` | text | User email (may be present) |
+| `role` | text | `Admin`, `Manager`, or `Recruiter` |
+| `location_filter` | text[] | Array of location names (empty = all) |
+| `department_filter` | text[] | Array of department names (empty = all) |
+
+> Legacy column name: `dealership_filter` (now renamed to `location_filter`; the code handles both for backwards compatibility).
+
+---
+
+### 5.3 `career_dealerships`
+
+Reference table for all valid location/dealership names.
+
+| Column | Description |
+|---|---|
+| `name` | Location display name |
+
+Used to populate the Locations dropdown in the Admin Dashboard and filters. Falls back to distinct values extracted from the applications table if this table is empty.
+
+---
+
+### 5.4 `career_departments`
+
+Reference table for all valid department names.
+
+| Column | Description |
+|---|---|
+| `name` | Department display name |
+
+Same fallback behavior as `career_dealerships`.
+
+---
+
+### 5.5 Supabase RPC Functions
+
+| Function | Purpose |
+|---|---|
+| `get_demo_applications` | Returns applications for demo mode users |
+| `get_demo_dealerships` | Returns locations for demo mode |
+| `get_demo_departments` | Returns departments for demo mode |
+| `get_demo_assignments` | Returns user assignments for demo mode |
+| `grant_user_access(p_email, p_role, p_dealerships, p_departments)` | Creates or updates a user assignment record |
+| `remove_demo_assignment(row_id)` | Deletes a user assignment (bypasses RLS via SECURITY DEFINER) |
+
+---
+
+## 6. Data Flow Architecture
+
+```
+┌─────────────────────────────────────────────────┐
+│  App Load                                       │
+│  supabase.auth.getSession()                     │
+│  + onAuthStateChange listener registered        │
+└──────────────────────┬──────────────────────────┘
+                       │  session exists
+                       ▼
+┌─────────────────────────────────────────────────┐
+│  handleUserSession(session)                     │
+│  → fetchUserAssignments(userId)                 │
+│    - Queries career_user_assignments            │
+│    - Returns role + location/dept filters       │
+│  → Builds User object (role, permissions)       │
+│  → setCurrentUser(user)                         │
+└──────────────────────┬──────────────────────────┘
+                       │  currentUser set
+                       ▼
+┌─────────────────────────────────────────────────┐
+│  refreshData()                                  │
+│  → fetchApplications(user, dateRange)           │
+│    - Paginates career_test_dev_applications     │
+│      in 1,000-record batches                    │
+│    - Maps each DB row → Application model       │
+│  → setApplications(data)                        │
+│  → Derive allPossibleLocations/Departments/Titles│
+└──────────────────────┬──────────────────────────┘
+                       │
+          ┌────────────┼──────────────────┐
+          ▼            ▼                  ▼
+   filteredApplications  sortedApplications  paginatedApplications
+   (useMemo)             (useMemo)            (useMemo)
+   - Role permissions    - sortConfig key    - currentPage × itemsPerPage
+   - dateRange filter    - asc / desc        - Slices sorted list
+   - search text
+   - status / location /
+     department / jobTitle
+          │
+          ▼
+┌──────────────────────────────────────────────────┐
+│  Rendered to View (List / Table / Focus / Admin) │
+└──────────────┬───────────────────────────────────┘
+               │  User takes action
+        ┌──────┴──────┐
+        ▼             ▼
+  Stage update    Notes update
+  (optimistic)    (optimistic)
+        │             │
+        ▼             ▼
+  updateApplicationStage()   updateApplicationNotes()
+  → DB write to              → DB write to
+    career_test_dev_apps        career_test_dev_apps
+  → handleAppUpdate()         → handleAppUpdate()
+    updates local state         updates local state
+```
+
+---
+
+## 7. Core Features & Workflows
+
+### 7.1 Browsing Applications
+
+On load, all applications within the selected date range are fetched and stored in memory. The UI renders a paginated, filtered, and sorted subset of this in-memory list. All subsequent filtering, sorting, and pagination operations happen client-side without additional database queries.
+
+**Date range options:** Last 3 Months (default) · Last 6 Months · All Time
+
+---
+
+### 7.2 Filtering
+
+Six independent filters can be combined simultaneously:
+
+| Filter | Type | Description |
+|---|---|---|
+| **Search** | Text input | Matches against full name, email, and job title |
+| **Date Range** | Single select | Filters `dateApplied` to last 3mo, 6mo, or all time |
+| **Status** | Multi-select | Filter by pipeline stage (`New`, `Reviewing`, etc.) |
+| **Job Titles** | Multi-select | Filter by specific job titles |
+| **Departments** | Multi-select | Filter by department |
+| **Locations** | Multi-select | Filter by dealership/location |
+
+Filters are accumulated in the `filters` state object (`FilterState`) in `App.tsx`. Any filter change resets `currentPage` to 1 and clears bulk selections.
+
+For non-Admin users, the `allowedLocations` and `allowedDepartments` from their permissions are automatically applied **on top of** the user-chosen filters, ensuring they can never see data outside their assigned scope.
+
+---
+
+### 7.3 Sorting
+
+Available in Table View. Users can click column headers to sort:
+
+| Column | `SortKey` |
+|---|---|
+| Candidate Name | `fullName` |
+| Stage | `stage` |
+| Job Title | `jobTitle` |
+| Location | `location` |
+| Date Applied | `dateApplied` |
+
+Clicking the same column header toggles between ascending and descending. A visual arrow indicator shows the current sort direction.
+
+**File:** `App.tsx` `handleSort()`, `sortedApplications` useMemo
+
+---
+
+### 7.4 Pagination
+
+| Setting | Details |
+|---|---|
+| Default page size | 25 |
+| Available page sizes | 10 · 25 · 50 · 100 |
+| Data fetch batch size | 1,000 records per Supabase query |
+| Maximum records fetched | 50,000 (safety limit) |
+
+Pagination controls appear at the bottom of both List View and Table View. Changing the page size resets to page 1.
+
+---
+
+### 7.5 Updating an Application Stage
+
+1. User opens an application (clicking a card or table row)
+2. `ApplicationDetail` panel slides in
+3. User selects a new stage from the `StatusSelect` dropdown
+4. Confirmation is shown if the change is a downgrade or to `Rejected`
+5. `updateApplicationStage(app, newStage)` is called
+   - Updates `processing_stage` column in `career_test_dev_applications` using `Entry Id`
+   - Verifies that exactly 1 row was affected; throws if 0 rows matched
+6. `handleAppUpdate(id, { stage: newStage })` is called immediately (optimistic update) — the in-memory `applications` array is updated without re-fetching
+
+**File:** `services/applicationService.ts` — `updateApplicationStage()`
+
+---
+
+### 7.6 Bulk Stage Updates
+
+1. User selects applications using checkboxes (individual or "Select Page")
+2. A floating action bar appears at the bottom of the screen showing the selection count
+3. User clicks one of the pipeline stage buttons in the floating bar
+4. A confirmation dialog appears: "Move X candidates to [Stage]?"
+5. On confirm, `bulkUpdateApplicationStage(ids, newStage)` is called
+   - Uses Supabase `.in('Entry Id', ids)` to update all records in one query
+6. Optimistic update immediately updates all selected records in the in-memory list
+7. Bulk selection is cleared
+
+**File:** `App.tsx` — `handleBulkStatusChange()`, `services/applicationService.ts` — `bulkUpdateApplicationStage()`
+
+---
+
+### 7.7 Internal Notes
+
+1. User opens `ApplicationDetail`
+2. Clicks the notes icon/button to open `NotesModal`
+3. Types or edits the note text
+4. On save, `updateApplicationNotes(app, notes)` is called
+   - Updates `internal_notes` column in the DB
+   - Uses row-count verification (same as stage updates)
+5. Optimistic update reflects the new notes in the detail panel immediately
+
+Notes are visible to all staff with access to that application.
+
+---
+
+### 7.8 Application History
+
+When viewing an applicant in `ApplicationDetail`, the component automatically scans all loaded applications for other submissions from the same person by matching:
+- Exact **email** address match, OR
+- Exact **full name** match
+
+Matched applications are listed chronologically (newest first) in a history section, helping reviewers identify repeat applicants.
+
+**File:** `components/ApplicationDetail.tsx` lines 65–84
+
+---
+
+### 7.9 User Access Management (Admin Only)
+
+Accessible via the **Admin** button in the header (visible to Admin role only).
+
+**Granting access:**
+1. Click "Grant Access"
+2. Enter email address and optional display name
+3. Select a role (Recruiter, Manager, Admin)
+4. For Recruiter/Manager: optionally restrict by Locations and/or Departments
+5. Submit — calls `grant_user_access` RPC, which creates the user account if needed and inserts a `career_user_assignments` row
+
+**Editing access:**
+1. Click the edit (pencil) icon on a user row
+2. Modify role and/or permission filters
+3. Submit — calls `updateAdminUser()`, which updates the `career_user_assignments` row directly
+
+**Revoking access:**
+1. Click the delete (trash) icon on a user row
+2. Confirm the dialog
+3. `deleteAdminUser(id)` is called:
+   - Attempts direct `DELETE` on `career_user_assignments`
+   - If RLS silently blocks the delete (returns 0 rows affected), falls back to the `remove_demo_assignment` RPC (which uses `SECURITY DEFINER` to bypass RLS)
+   - Throws only if both attempts fail
+
+**File:** `components/AdminDashboard.tsx`, `services/adminService.ts`
+
+---
+
+## 8. View Modes
+
+The app has four view modes, controlled by the `viewMode` state in `App.tsx`.
+
+### 8.1 List View (default: `'list'`)
+
+A vertical scrollable list of `ApplicationCard` components. Each card shows:
+- Candidate initials avatar
+- Full name and job title
+- Location and department tags
+- Date applied
+- Current pipeline stage badge
+- Notes indicator (if notes exist)
+- Checkbox for bulk selection
+
+Clicking a card opens the `ApplicationDetail` panel on the right.
+
+---
+
+### 8.2 Table View (`'table'`)
+
+A spreadsheet-style `TableView` component with sortable column headers. Columns: Name, Stage, Job Title, Location, Date Applied.
+
+Clicking a row opens the same `ApplicationDetail` panel.
+
+---
+
+### 8.3 Focus Mode (`'focus'`)
+
+A full-screen, keyboard-driven review queue for rapid triage of applicants. The queue is built from the current `sortedApplications` at the time Focus Mode is launched and does **not** update if filters change while in Focus Mode.
+
+Each candidate is displayed using the standard `ApplicationDetail` component (full profile visible). Actions are taken via a floating dock at the bottom:
+
+| Action | Button | Keyboard |
+|---|---|---|
+| Shortlist (→ `Reviewing`) | Blue "Shortlist" | `Arrow Right` |
+| Reject (→ `Rejected`) | "Reject" | `Arrow Left` |
+| Skip | "Skip" | `Arrow Down` |
+| Exit | "Exit" | `Escape` |
+
+A progress bar at the top shows how far through the queue the reviewer is. At the end of the queue, a completion screen is shown with an option to restart from the beginning.
+
+**File:** `components/FocusMode.tsx`
+
+---
+
+### 8.4 Admin Dashboard (`'admin'`)
+
+Only rendered when `currentUser.role === 'Admin'`. Replaces the main content area with the `AdminDashboard` component.
+
+Contains:
+- User assignments table (email, role, permitted locations, permitted departments)
+- "Grant Access" modal (invite new users)
+- "Edit Access" modal (change existing user's role/permissions)
+- "Troubleshoot" panel with system health checks and database repair tools
+
+---
+
+## 9. Services Layer
+
+### 9.1 `supabaseClient.ts`
+
+Creates and exports a single Supabase client instance used throughout the app.
+
+```typescript
+import { createClient } from '@supabase/supabase-js';
+export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+```
+
+The URL and anon key are currently hardcoded in this file. For production, these should be moved to environment variables (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`).
+
+---
+
+### 9.2 `applicationService.ts`
+
+| Function | Description |
+|---|---|
+| `fetchApplications(user, timeRange)` | Fetches all applications, paginating in 1,000-record batches. Demo users use the `get_demo_applications` RPC instead. |
+| `fetchApplicationDetails(id)` | Fetches a single application's full data (all columns) by `Entry Id`. |
+| `updateApplicationStage(app, newStage)` | Updates `processing_stage` for one record. Validates row count. |
+| `bulkUpdateApplicationStage(ids, newStage)` | Updates `processing_stage` for multiple records using `.in()`. |
+| `updateApplicationNotes(app, notes)` | Updates `internal_notes` for one record. Validates row count. |
+
+**Row mapping:** `mapRowToApplication()` transforms raw DB column names (e.g., `"Name (First)"`, `"Entry Date"`) into the clean `Application` interface used throughout the app.
+
+---
+
+### 9.3 `userService.ts`
+
+| Function | Description |
+|---|---|
+| `fetchUserAssignments(userId)` | Fetches all rows from `career_user_assignments` for the given user ID. Aggregates role (highest privilege wins) and deduplicates location/department arrays. Enforces a 10-second timeout; returns graceful empty result on failure. |
+
+---
+
+### 9.4 `adminService.ts`
+
+| Function | Description |
+|---|---|
+| `fetchLocations()` | Reads `career_dealerships`. Falls back to distinct `Location` values from applications if table is empty. |
+| `fetchDepartments()` | Reads `career_departments`. Falls back to distinct `Job Department` values from applications. |
+| `fetchAdminUsers()` | Reads all rows from `career_user_assignments`. Detects infinite recursion errors specifically. |
+| `inviteUser(payload)` | Calls `grant_user_access` RPC with email, role, location list, and department list. |
+| `updateAdminUser(id, updates)` | Updates role and filter arrays for an existing assignment row. |
+| `deleteAdminUser(rowId)` | Attempts direct delete; falls back to `remove_demo_assignment` RPC if RLS silently blocks. |
+| `checkSystemHealth()` | Tests read access to `career_user_assignments`, `career_dealerships`, and `career_departments`. Returns a status report with ok/warning/error per table. |
+
+---
+
+### 9.5 `geminiService.ts` (Disabled)
+
+This file contains an integration with Google Gemini AI to generate a 50–70 word candidate summary including perceived strengths and suggested interview questions. It is currently **disabled by request** and not called anywhere in the application. It would require a `GEMINI_API_KEY` environment variable if re-enabled.
+
+---
+
+## 10. State Management
+
+TalentFlow uses **React hooks only** — no external state library (no Redux, Zustand, etc.).
+
+### 10.1 Core State Variables (`App.tsx`)
+
+| Variable | Type | Purpose |
+|---|---|---|
+| `currentUser` | `User \| null` | Authenticated user with role and permissions |
+| `applications` | `Application[]` | All fetched applications (full in-memory dataset) |
+| `selectedAppId` | `string \| number \| null` | ID of currently open application in detail panel |
+| `bulkSelectedIds` | `Set<string \| number>` | IDs selected for bulk operations |
+| `isBulkUpdating` | `boolean` | Loading state for bulk update operation |
+| `filters` | `FilterState` | All active filter values |
+| `sortConfig` | `{ key, direction } \| null` | Current sort column and direction |
+| `currentPage` | `number` | Active pagination page |
+| `itemsPerPage` | `number` | Records per page (10/25/50/100) |
+| `dateRange` | `'3m' \| '6m' \| 'all'` | Date range filter for data fetch |
+| `viewMode` | `ViewMode` | `'list' \| 'table' \| 'admin' \| 'focus'` |
+| `isLoading` | `boolean` | Data fetch in progress |
+| `dbConnectionError` | `boolean` | Shows DB connection error overlay |
+
+### 10.2 Derived / Memoized State
+
+| Computed Value | Source | Purpose |
+|---|---|---|
+| `filteredApplications` | `useMemo` | Applies permission scope + all active filters to `applications` |
+| `sortedApplications` | `useMemo` | Applies `sortConfig` to `filteredApplications` |
+| `paginatedApplications` | `useMemo` | Slices `sortedApplications` for the current page |
+| `availableLocations` | `useMemo` | Distinct locations from `filteredApplications` for filter dropdown |
+| `availableDepartments` | `useMemo` | Distinct departments from `filteredApplications` for filter dropdown |
+| `availableJobTitles` | `useMemo` | Distinct job titles from `filteredApplications` for filter dropdown |
+
+### 10.3 Optimistic Updates
+
+When a user updates a stage or notes, the UI updates instantly via:
+
+```typescript
+const handleAppUpdate = useCallback((id?: string | number, data?: Partial<Application>) => {
+    if (id && data) {
+        // Optimistic: merge partial update into in-memory array
+        setApplications(prev => prev.map(app =>
+            String(app.id) === String(id) ? { ...app, ...data } : app
+        ));
+    } else {
+        refreshData(); // Fall back to full re-fetch
+    }
+}, [refreshData]);
+```
+
+The DB write is fire-and-confirm; the UI does not wait for a DB response before reflecting the change.
+
+### 10.4 UIProvider Context
+
+**File:** `components/UIProvider.tsx`
+
+Provides global UI utilities via React Context:
+
+```typescript
+const { toast, confirm, alert } = useUI();
+```
+
+| Function | Behavior |
+|---|---|
+| `toast(message, type)` | Shows a dismissible notification banner. Auto-dismisses after 5 seconds. Types: `success`, `error`, `warning`, `info` |
+| `confirm({ title, message, confirmText, variant })` | Shows a modal dialog with Cancel and Confirm buttons. Returns a `Promise<boolean>` |
+| `alert(title, content)` | Shows an informational modal with just a dismiss button |
+
+---
+
+## 11. Component Reference
+
+### `Login.tsx`
+Renders the full-screen login form. Handles magic link submission and displays auth errors parsed from the URL hash.
+
+### `ApplicationCard.tsx`
+Compact card for List View. Shows summary info, a bulk-select checkbox, and a quick status change dropdown.
+
+### `ApplicationDetail.tsx`
+Full candidate profile panel. Fetches complete application data (all columns) on open. Shows resume link, cover letter, contact info, notes editor, stage controls, and application history.
+
+### `TableView.tsx`
+Spreadsheet-style view. Accepts `sortConfig` and `onSort` props from App.tsx. Renders a clickable header row and bulk-select checkboxes in each data row.
+
+### `FocusMode.tsx`
+Full-screen overlay. Maintains its own local `queue` state derived from `initialApplications` at launch time to prevent queue instability as stages change. Delegates rendering to `ApplicationDetail` for the current candidate.
+
+### `AdminDashboard.tsx`
+Admin-only user management interface. Loads data independently (locations, departments, user assignments) on mount. Manages its own form state for the Grant/Edit Access modal.
+
+### `NotesModal.tsx`
+A modal that provides a textarea for editing and saving `internal_notes`.
+
+### `MultiSelect.tsx`
+Reusable checkbox dropdown. Used for Status, Job Titles, Department, and Location filters, and also within the Admin Dashboard permission assignment forms.
+
+### `StatusSelect.tsx`
+A styled `<select>` element for the `ApplicationStage` enum. Each stage is color-coded.
+
+### `Button.tsx`
+Reusable button with variants: `primary`, `secondary`, `outline`, `danger`. Supports `isLoading` prop (shows spinner).
+
+### `UIProvider.tsx`
+Context provider wrapping the entire app. Manages toast queue and modal overlay state.
+
+### `ErrorBoundary.tsx`
+Catches uncaught React render errors and shows a reload button rather than a blank screen.
+
+---
+
+## 12. Configuration & Deployment
+
+### 12.1 Environment Variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `VITE_SUPABASE_URL` | Yes | Your Supabase project URL |
+| `VITE_SUPABASE_ANON_KEY` | Yes | Your Supabase anon/public key |
+| `GEMINI_API_KEY` | No | Google Gemini API key (AI feature is currently disabled) |
+
+> Currently the Supabase URL and key are hardcoded in `services/supabaseClient.ts`. Moving them to environment variables is recommended.
+
+### 12.2 Vercel Deployment
+
+| Setting | Value |
+|---|---|
+| Framework Preset | Vite |
+| Root Directory | `./` |
+| Build Command | `vite build` or `npm run build` |
+| Output Directory | `dist` |
+| Install Command | `npm install` |
+
+The included `vercel.json` rewrites all paths to `index.html` to support SPA client-side routing:
+
+```json
+{
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+}
+```
+
+### 12.3 Local Development
+
+```bash
+npm install
+npm run dev        # Starts Vite dev server at http://localhost:3000
+npm run build      # Production build to /dist
+```
+
+---
+
+## 13. Error Handling
+
+### 13.1 Database Connection Timeout
+
+`fetchUserAssignments()` races the Supabase query against a 10-second timeout. On timeout:
+- A `warning` toast is shown: "Could not verify full permissions. Some features may be limited."
+- The user still logs in with degraded permissions (empty location/department filters)
+- The super admin override (`clittle@garberauto.com`) still gets `Admin` role even if the fetch fails
+
+### 13.2 Database Connection Error (Full Block)
+
+If `fetchApplications()` or the auth session fails at the app level, the `dbConnectionError` flag is set. This replaces the main content area with:
+
+> "Connection Issue — We could not verify your permissions."
+
+A **Retry Connection** button re-runs the session check without a full page reload.
+
+### 13.3 Infinite Recursion in RLS Policies
+
+If a Supabase Row Level Security (RLS) policy has a circular dependency, queries to `career_user_assignments` will return an "infinite recursion" error. The app detects this specific error message and:
+- In `fetchApplications()`: throws a descriptive `"Critical Database Error: Infinite Recursion detected"` error
+- In `fetchAdminUsers()`: throws the same message
+- In the Admin Dashboard: the **Troubleshoot** panel detects and labels this as `CRITICAL` in the health check report
+
+A "Copy SQL Fix" button in the Troubleshoot panel copies a repair prompt to the clipboard that can be pasted into the Supabase AI SQL assistant.
+
+### 13.4 Silent RLS Block on Delete
+
+Supabase RLS can silently suppress a `DELETE` operation — returning no error but affecting 0 rows. `deleteAdminUser()` detects this by requesting an exact row count. If count is 0, it automatically falls back to the `remove_demo_assignment` RPC which uses `SECURITY DEFINER` to bypass RLS.
+
+### 13.5 Auth Hook Failures
+
+If a Supabase "Custom Access Token Hook" is misconfigured, sign-in redirects back with a URL fragment like:
+```
+#error=server_error&error_description=Error+running+hook...
+```
+
+`Login.tsx` parses this and displays the error. Resolution: disable the Custom Access Token Hook in the Supabase Auth settings.
+
+---
+
+## 14. Troubleshooting
+
+### Login Error: "Error running hook..."
+
+1. Go to **Supabase Dashboard → Authentication → Hooks**
+2. Disable the "Custom Access Token Hook"
+3. Manually ensure your user has an Admin row:
+   ```sql
+   INSERT INTO public.career_user_assignments (user_id, role)
+   SELECT id, 'Admin' FROM auth.users WHERE email = 'your@email.com';
+   ```
+
+### Infinite Recursion on User Assignments
+
+1. Open the app and navigate to **Admin → Troubleshoot**
+2. Click **"Copy SQL Fix"** and paste into the Supabase SQL Editor (using the AI assistant shortcut `Ctrl+I`)
+3. This will drop and recreate the RLS policies safely
+
+### User Delete Fails Silently
+
+This is handled automatically by the app (RPC fallback). If manual intervention is needed:
+
+```sql
+DELETE FROM public.career_user_assignments WHERE id = <row_id>;
+```
+
+### Application Stage Not Updating
+
+If `updateApplicationStage` throws "Database record not found", the `Entry Id` used as the primary key may not match. Check:
+- The `Entry Id` column exists and is populated in `career_test_dev_applications`
+- The `Entry Id` column type is compatible with the value being matched (integer vs. text)
+
+### No Applications Loading
+
+1. Verify your Supabase RLS policies allow authenticated users to `SELECT` from `career_test_dev_applications`
+2. Check the browser console for specific Supabase error messages
+3. Confirm the table name is exactly `career_test_dev_applications`

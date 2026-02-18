@@ -1,3 +1,8 @@
+This documentation is formatted specifically for **Mintlify**. It utilizes MDX features, Mermaid.js for diagrams, and Mintlify’s built-in callout components.
+
+---
+
+````mdx
 ---
 title: "Inventory Service"
 description: "Technical documentation for the Inventory Reconciliation and Discrepancy Engine."
@@ -12,11 +17,11 @@ The service identifies mismatches in vehicle data (price, mileage, status) and t
 
 ### Core Data Sources
 
-| Source      | Role            | Description                                                |
-| :---------- | :-------------- | :--------------------------------------------------------- |
-| **HomeNet** | Marketing Truth | The primary source for vehicle photos and syndication.     |
-| **DDC**     | Consumer Truth  | The live status of the vehicle on the dealership website.  |
-| **CDK**     | Financial Truth | The accounting system containing balances and deal status. |
+| Source | Role | Description |
+| :--- | :--- | :--- |
+| **HomeNet** | Marketing Truth | The primary source for vehicle photos and syndication. |
+| **DDC** | Consumer Truth | The live status of the vehicle on the dealership website. |
+| **CDK** | Financial Truth | The accounting system containing balances and deal status. |
 
 ---
 
@@ -54,47 +59,111 @@ This flowchart represents the `getInventoryDiscrepancies` logic, which aggregate
 
 ```mermaid
 graph TD
-  A[Start: getInventoryDiscrepancies] --> B[CTE: hn_discrepancies]
-  B --> B1{Compare HN to DDC}
-
-  B1 -- Missing in DDC --> C[MISSING_DDC]
-  B1 -- Type Mismatch --> D[TYPE_MISMATCH]
-  B1 -- Mileage Diff --> E[MILEAGE_MISMATCH]
-
-  C --> F[Join with cdk_inventory_core]
-  D --> F
-  E --> F
-
-  F --> G[Join with discrepancy_annotations]
-  G --> H[Apply CDK Validation Rules]
-  H --> I{Check Conditions}
-
-  I -- Fails Status, Balance, Deal --> J[cdk_check = FALSE]
-  I -- Passes All DMS Rules --> K[cdk_check = TRUE]
-
-  J --> L[Sync State in Database]
-  K --> L
-
-  L --> M[Return DiscrepancyItem Array]
-```
-
-````mermaid
-```mermaid placement="top-right"
-  flowchart LR
-    subgraph subgraph1
-        direction TB
-        top1[top] --> bottom1[bottom]
-    end
-    subgraph subgraph2
-        direction TB
-        top2[top] --> bottom2[bottom]
-    end
-    %% ^ These subgraphs are identical, except for the links to them:
-
-    %% Link *to* subgraph1: subgraph1 direction is maintained
-    outside --> subgraph1
-    %% Link *within* subgraph2:
-    %% subgraph2 inherits the direction of the top-level graph (LR)
-    outside ---> top2
-```
+    A[Start: getInventoryDiscrepancies] --> B[CTE: hn_discrepancies]
+    B --> B1{Compare HN to DDC}
+    B1 -- Missing in DDC --> C[MISSING_DDC]
+    B1 -- Type Mismatch --> D[TYPE_MISMATCH]
+    B1 -- Mileage Diff --> E[MILEAGE_MISMATCH]
+    
+    C & D & E --> F[Join with cdk_inventory_core]
+    F --> G[Join with discrepancy_annotations]
+    
+    G --> H[Apply CDK Validation Rules]
+    H --> I{Check Conditions}
+    I -- Fails Status/Balance/Deal --> J[cdk_check = FALSE]
+    I -- Passes All DMS Rules --> K[cdk_check = TRUE]
+    
+    J & K --> L[Sync State in Database]
+    L --> M[Return DiscrepancyItem Array]
 ````
+
+### Discrepancy Lifecycle (State Sync)
+
+To prevent "timer resets" during system downtime, the service uses a **Liveness Check**.
+
+```mermaid
+flowchart TD
+    Start([Sync States]) --> Live{System Active?}
+    Live -- Last Update < 26h --> Active[System is Alive]
+    Live -- Last Update > 26h --> Stale[System Stale - Prevent Resets]
+    
+    Active --> Comp{Compare Status}
+    Comp -- Status Changed --> Reset[Reset first_observed_at to NOW]
+    Comp -- Gap > 48h --> Reset
+    Comp -- No Change --> Keep[Keep existing date]
+    
+    Stale --> Keep
+    Keep --> Update[Update updated_at & last_cdk_status]
+```
+
+---
+
+## API Reference
+
+### Inventory Fetching
+
+<AccordionGroup>
+  <Accordion icon="list-check" title="getInventoryDiscrepancies()">
+    Fetches all vehicles currently showing a discrepancy.
+
+    - Calculates `daysInStock`.
+    - Joins annotations (notes, case numbers).
+    - Triggers an asynchronous state sync if new issues are detected.
+  </Accordion>
+  <Accordion icon="magnifying-glass" title="getVehicleDetails(vin: string)">
+    Returns a comprehensive object for a single VIN, including:
+
+    - **GM Info:** Sync status, BAC code, and suppression status.
+    - **Accounting:** CDK balance and deal status.
+    - **Live Status:** Last known presence on HomeNet and DDC.
+  </Accordion>
+</AccordionGroup>
+
+### Live Verification
+
+The service includes methods to bypass cached database data and check live websites via a CORS proxy.
+
+- `checkDDC(vin)`: Scrapes the Dealer.com site for the VIN.
+- `checkHomeNet(vin)`: Scrapes the HomeNet live API for the vehicle's VDP (Vehicle Details Page) URL.
+
+---
+
+## Dealership Configuration
+
+The `getCompanyValidationSql` helper maintains the mapping between dealership entities and their internal CDK company codes.
+
+<Warning>
+  **Hardcoded Mappings:** When adding a new dealership to the group, the `getCompanyValidationSql` function must be updated to include the correct CDK Company IDs, or the validation will default to `TRUE`, potentially missing discrepancies.
+</Warning>
+
+| Dealership Name         | Valid Company Codes                    |
+| :---------------------- | :------------------------------------- |
+| Garber Auto Mall        | 1, 3, 4                                |
+| Garber Bay Road         | 71, 30                                 |
+| Garber Chevrolet Subaru | 24, 25                                 |
+| _Most Others_           | Single Specific Code (e.g., '6', '13') |
+
+---
+
+## Security & Maintenance
+
+<Note>
+  **Environment Variables:** The `CONNECTION_STRING` is currently hardcoded for development. For production deployment, this must be moved to a secure Environment Variable.
+</Note>
+
+### Webhook Integration
+
+The service sends automated reports via a Make.com (Integromat) webhook: `https://hook.us1.make.com/o5v8q2fnia0h9b3hsqdpvy4jmpjwgxay`
+
+This payload includes the `email_html` and the list of `recipients` configured in the `dealership_recipients` table.
+
+```
+
+### Features included in this Mintlify version:
+1.  **MDX Metadata:** Set up with title, description, and icon.
+2.  **Tables:** Cleanly formatted for source descriptions and mapping.
+3.  **Steps Component:** Used for the validation rule sequence.
+4.  **Mermaid Diagrams:** Integrated directly for visual logic flow.
+5.  **Accordions:** Used to organize the API reference so it's not overwhelming.
+6.  **Callouts:** Used `Warning`, `Note`, and `Info` (via Steps) to highlight critical technical details.
+```
