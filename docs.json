@@ -51,5 +51,11 @@
         "href": "https://www.garberspecials.com/support-request/"
       }
     ]
+  },
+  "fonts": {
+    "family": "Inter"
+  },
+  "banner": {
+    "dismissible": true
   }
 }
