@@ -1,0 +1,267 @@
+---
+title: "CarBravo Inspection Report - VDPs"
+---
+
+# Garber Vehicle Inspection & CarBravo Benefits Widget
+
+**Version:** 1.0\
+**Author:** Garber Digital Marketing Development Team
+
+------------------------------------------------------------------------
+
+## Overview
+
+This script is a **Dealer.com Web Integration API widget** designed to
+enhance Vehicle Detail Pages (VDPs).\
+It dynamically inserts two UI components:
+
+1.  **Vehicle Inspection Report Widget**
+2.  **CarBravo Benefits Widget**
+
+The widgets are rendered only when the vehicle meets the required
+criteria.
+
+------------------------------------------------------------------------
+
+## Features
+
+### Vehicle Inspection Widget
+
+-   Displays **126‑Point Inspection status**
+-   Pulls VIN-specific inspection report URLs from a **Google Sheets
+    CSV**
+-   Shows inspection categories in a **carousel UI**
+-   Provides a **Download Full PDF Report** button
+-   Uses animated PASS indicators for each category
+
+### CarBravo Benefits Widget
+
+Displays CarBravo program benefits including:
+
+-   6‑Month / 6,000‑Mile Limited Warranty
+-   10‑Day / 500‑Mile Exchange Program
+-   Roadside Assistance
+-   Vehicle History Report
+-   Additional CarBravo protections
+
+------------------------------------------------------------------------
+
+## Page Conditions
+
+The script runs only on:
+
+-   `detailPage` (Dealer.com VDP)
+
+Additional filters:
+
+### CarBravo Filter
+
+The script checks the vehicle's `optionCodes` field.
+
+Example expected value:
+
+    "optionCodes": [
+      "CarBravo"
+    ]
+
+If the vehicle **does not include the CarBravo option code**, the
+widgets will not render.
+
+------------------------------------------------------------------------
+
+## Data Source
+
+Inspection reports are sourced from a **public Google Sheets CSV
+export**.
+
+Example:
+
+    https://docs.google.com/spreadsheets/.../output=csv
+
+Required CSV Columns:
+
+  Column                  Description
+  ----------------------- -------------------------------
+  VIN                     Vehicle VIN
+  Inspection Report URL   Link to PDF inspection report
+
+------------------------------------------------------------------------
+
+## Rendering Location
+
+Widgets are injected into the Dealer.com layout using:
+
+    API.insert('secondary-content')
+
+This places the widgets within the **VDP secondary content column**.
+
+------------------------------------------------------------------------
+
+## Widget Structure
+
+### Vehicle Inspection Card
+
+Components:
+
+-   Shield icon header
+-   "CarBravo Certified · 126 Point Inspection"
+-   PDF download button
+-   Inspection category carousel
+-   PASS indicators
+-   Technician inspection disclaimer
+
+Categories displayed:
+
+-   Road Test
+-   Exterior
+-   Interior
+-   Safety
+-   Maintenance
+-   Tires & Brake Pads
+-   Under Vehicle
+-   Suspension
+-   Engine Compartment
+
+------------------------------------------------------------------------
+
+### CarBravo Benefits Card
+
+Displays a carousel containing:
+
+-   Benefit title
+-   Description
+-   Program badge
+-   Optional disclaimer reference
+
+Example benefit:
+
+    Not in Love? Exchange It.
+    Take up to 10 days or 500 miles to ensure it's the right fit.
+
+------------------------------------------------------------------------
+
+## Styling
+
+The widgets share a consistent design system:
+
+  Property        Value
+  --------------- ----------------------
+  Border Radius   `var(--radius-lg)`
+  Padding         `var(--space-lg)`
+  Background      `var(--card-bg)`
+  Border          `var(--card-border)`
+  Shadow          `var(--card-shadow)`
+  Primary Color   `#072a60`
+
+Mobile spacing uses 8px horizontal margins to match Dealer.com layout
+spacing.
+
+------------------------------------------------------------------------
+
+## Carousel Behavior
+
+The carousel automatically adjusts based on viewport width.
+
+| Screen Size \| Cards Visible \|
+
+\|-------------\|---------------\| Mobile \| 2 \| \| Tablet / Desktop \|
+3 \|
+
+Controls:
+
+-   Swipe (mobile)
+-   Drag (desktop)
+-   Arrow navigation
+
+Navigation buttons automatically disable when no further cards exist.
+
+------------------------------------------------------------------------
+
+## Performance Optimizations
+
+The script includes several optimizations:
+
+-   **CSV caching** to prevent repeated downloads
+-   VIN lookup performed once per page
+-   CSS injected only once
+-   Widget prevented from duplicate rendering
+
+------------------------------------------------------------------------
+
+## Logging
+
+Debug logging uses:
+
+    API.log()
+
+Example messages:
+
+    [Inspection Widget] CSV loaded
+    [Inspection Widget] VIN on page: XXXXX
+    [Inspection Widget] Widget rendered
+
+------------------------------------------------------------------------
+
+## Script Flow
+
+1.  Wait for `page-load-v1`
+2.  Confirm page is `detailPage`
+3.  Retrieve vehicle data
+4.  Verify `optionCodes` contains `CarBravo`
+5.  Fetch CSV inspection data
+6.  Match VIN
+7.  Insert widgets
+8.  Initialize carousel UI
+
+------------------------------------------------------------------------
+
+## Browser Compatibility
+
+Supports:
+
+-   Chrome
+-   Edge
+-   Safari
+-   Firefox
+-   Mobile browsers
+
+Requires:
+
+-   Dealer.com Web Integration API
+-   ES6 JavaScript support
+
+------------------------------------------------------------------------
+
+## Maintenance
+
+### Updating Inspection Reports
+
+Simply update the Google Sheet.
+
+No script deployment required.
+
+### Adding Benefits
+
+Update the `BENEFITS` array inside the script.
+
+------------------------------------------------------------------------
+
+## Encoding Recommendation
+
+When editing documentation or CSV files use:
+
+    Windows‑1252 (ANSI)
+
+This prevents issues with characters like:
+
+-   '
+-   "
+-   "
+
+which can break CSV parsing if saved incorrectly.
+
+------------------------------------------------------------------------
+
+## Author
+
+Garber Digital Marketing Development Team

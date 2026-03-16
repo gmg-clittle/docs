@@ -18,7 +18,8 @@
         "pages": [
           "ddc-api-scripts/ddc-get-offer-banner",
           "ddc-api-scripts/garber-buick-gmc-market-value-srp",
-          "ddc-api-scripts/mobile-call-us-cta"
+          "ddc-api-scripts/mobile-call-us-cta",
+          "car-bravo-inspection-report-vdps"
         ]
       },
       {
@@ -56,6 +57,7 @@
     "family": "Inter"
   },
   "banner": {
+    "content": "Internal Garber Digital Marketing documentation and developer resources.",
     "dismissible": true
   }
 }
