@@ -79,6 +79,43 @@ const DEALERSHIP_ID_BY_HOST = {
 https://gmg-dealership-hub.vercel.app/api/dealerships/{GMG_ID}/disclaimers
 
 ------------------------------------------------------------------------
+## Placement Logic
+
+The script injects disclaimers using the following priority order.
+
+### 1. Replace Native Dealer.com Disclaimer
+
+If the following element exists, the script replaces its content:
+
+```html
+<div data-widget-name="content-disclaimer"></div>
+```
+
+### 2. Use Custom Placeholder
+
+If no native disclaimer is found, the script looks for this optional placeholder:
+
+```html
+<div id="gmgDisclaimerPlaceholder"></div>
+```
+
+### 3. Fallback Injection
+
+If neither of the above exists, the script falls back to appending the disclaimer to the first available container:
+
+- `.inventory-results`
+- `.srp-listings`
+- `.vehicle-list`
+- `main .container`
+- `main`
+
+## Optional Placeholder Setup
+
+To control disclaimer placement more precisely, add this HTML where you want the disclaimer to appear:
+
+```html
+<div id="gmgDisclaimerPlaceholder" class="ddc-content pt-3 text-muted"></div>
+```
 
 
 ------------------------------------------------------------------------
