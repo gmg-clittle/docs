@@ -19,7 +19,8 @@
           "ddc-api-scripts/ddc-get-offer-banner",
           "ddc-api-scripts/garber-buick-gmc-market-value-srp",
           "ddc-api-scripts/mobile-call-us-cta",
-          "car-bravo-inspection-report-vdps"
+          "car-bravo-inspection-report-vdps",
+          "ddc-api-scripts/disclaimers"
         ]
       },
       {

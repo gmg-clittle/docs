@@ -1,0 +1,105 @@
+---
+title: "Disclaimers"
+---
+
+---
+
+# GMG Dynamic Disclaimer Plugin
+
+## Overview
+
+The **GMG Dynamic Disclaimer Plugin** dynamically retrieves and injects dealership-specific disclaimer content into:
+
+- Search Results Pages (SRP)
+- Vehicle Detail Pages (VDP)
+
+Disclaimers are sourced from a centralized API and inserted cleanly into Dealer.com pages.
+
+---
+
+## Features
+
+- Works on both SRP and VDP
+- Automatically detects New vs Used inventory
+- Replaces existing disclaimer content if present
+- Inserts dynamically if no disclaimer exists
+- Optional placeholder support
+- 24-hour caching via sessionStorage
+- Dealer-specific API-driven content
+- Uses Dealer.com Web Integration API lifecycle
+
+---
+
+## Deployment Instructions
+
+### Step 1: Add Script to Dealer.com
+
+Navigate to:
+
+Dealer.com Admin → Site Tools → Edit Custom Site JavaScript
+
+Then:
+
+1. Open the "Bottom of Body" tab
+2. Paste the following script:
+
+```javascript
+(function () {
+  var s = document.createElement('script');
+  s.src = 'https://assets.garberauto.com/assets/ddc-api/js/gmgDisclaimers.js';
+  s.async = true;
+  document.body.appendChild(s);
+})();
+```
+
+3. Enable the script block
+4. Save & publish
+
+---
+
+## Important Notes
+
+- Do NOT place this in Head or Top of Body
+- Must be placed in Bottom of Body
+
+---
+
+## Hostname Mapping
+
+Each dealership must be mapped:
+
+```js
+const DEALERSHIP_ID_BY_HOST = {
+  "garberbuick.com": "250eaef3-fbf2-4fa8-8892-567d350af11d",
+  "www.garberbuick.com": "250eaef3-fbf2-4fa8-8892-567d350af11d"
+};
+```
+
+---
+
+## API Endpoint
+
+[https://gmg-dealership-hub.vercel.app/api/dealerships/{GMG\_ID}/disclaimers](https://gmg-dealership-hub.vercel.app/api/dealerships/{GMG_ID}/disclaimers)
+
+---
+
+## Placement Logic
+
+1. Replace native disclaimer: `[data-widget-name="content-disclaimer"]`
+2. Placeholder:
+   <div id="gmgDisclaimerPlaceholder" />
+3. Fallback: .inventory-results or
+   <main />
+
+---
+
+## Caching
+
+- sessionStorage
+- 24 hour TTL
+
+---
+
+## Summary
+
+Centralized, performant disclaimer management across Dealer.com sites.
