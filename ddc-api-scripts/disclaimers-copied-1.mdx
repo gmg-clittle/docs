@@ -1,0 +1,145 @@
+---
+title: "Disclaimers v2"
+---
+
+This script dynamically injects dealership-specific disclaimers into
+Dealer.com SRP and VDP pages using the Web Integration API.
+
+## Features
+
+-   Detects Search Results Page (SRP) and Vehicle Detail Page (VDP)
+-   Maps dealership hostname to UUID
+-   Fetches disclaimers from API
+-   Caches results (24 hours)
+-   Replaces or inserts disclaimer dynamically
+-   Handles new vs used vehicle logic
+
+------------------------------------------------------------------------
+
+## Installation Instructions
+
+### Step 1: Add Script to Dealer.com
+
+Navigate to:
+
+**Site Tools → Edit Custom Site JavaScript**
+
+Add the following snippet to the **bottom of the Body tab**:
+
+``` javascript
+(function () {
+  var s = document.createElement('script');
+  s.src = 'https://assets.garberauto.com/assets/ddc-api/js/gmgDisclaimers.js';
+  s.async = true;
+  document.body.appendChild(s);
+})();
+```
+
+Ensure the script block is enabled.
+
+------------------------------------------------------------------------
+
+## Dealership Mapping Requirement
+
+Each website must be mapped to a UUID inside the script:
+
+``` javascript
+var DEALERSHIP_ID_BY_HOST = {
+  "example.com": "uuid-here"
+};
+```
+
+If a hostname is not mapped, disclaimers will not load.
+
+------------------------------------------------------------------------
+
+## API Endpoint
+
+The script fetches disclaimers from:
+
+    https://gmg-dealership-hub.vercel.app/api/dealerships/{UUID}/disclaimers
+
+Response format:
+
+``` json
+{
+  "newVehicleDisclaimer": "...",
+  "usedVehicleDisclaimer": "..."
+}
+```
+
+------------------------------------------------------------------------
+
+## Page Detection Logic
+
+Uses Dealer.com Web Integration API:
+
+-   `page-load-v1`
+-   `vehicle-data-updated-v1`
+
+Only runs on: - Search Results Page (SRP) - Vehicle Detail Page (VDP)
+
+------------------------------------------------------------------------
+
+## Placement Logic
+
+Priority order:
+
+1.  Replace existing:
+
+    -   `[data-widget-name="content-disclaimer"]`
+    -   `.content-disclaimer`
+
+2.  Insert into:
+
+    -   `#gmgDisclaimerPlaceholder`
+
+3.  Update previously injected disclaimer
+
+4.  Fallback append to:
+
+    -   `.inventory-results`
+    -   `.vehicle-list`
+    -   `main`
+
+------------------------------------------------------------------------
+
+## Caching
+
+-   Uses `sessionStorage`
+-   Cache TTL: 24 hours
+-   Key format:
+
+```{=html}
+<!-- -->
+```
+    gmgDisclaimerCache:{dealershipId}
+
+------------------------------------------------------------------------
+
+## Styling
+
+Injected styles include:
+
+-   Top border separator
+-   Compact font sizing
+-   Clean disclaimer label + text layout
+
+------------------------------------------------------------------------
+
+## Notes
+
+-   Requires Dealer.com Web Integration API
+-   Must be loaded after DDC API is available
+-   Automatically retries initialization if API is not ready
+
+------------------------------------------------------------------------
+
+## Debugging
+
+Check console logs for:
+
+    [GMG Disclaimer]
+
+Common issues: - Missing hostname mapping - API fetch failure - DDC API
+not loaded
