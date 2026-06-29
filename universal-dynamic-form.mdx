@@ -1,0 +1,746 @@
+---
+title: "Universal Dynamic Form"
+---
+
+# Universal Dynamic Form
+
+The **Universal Dynamic Form** is a URL-configurable lead form that can be embedded on dealership website pages with an iframe. It is designed to support multiple dealership use cases without creating a separate hard-coded form for every campaign, store, vehicle, or landing page.
+
+The form can route submissions as:
+
+- **ADF/XML only** to the CRM
+- **Custom HTML email only** to one or more inboxes
+- **Both** CRM ADF/XML and custom HTML email at the same time
+
+It also supports service lead designation, configurable dealership metadata, optional vehicle fields, custom lead comments, custom disclaimers, and basic visual styling through URL parameters.
+
+<Note>
+  This documentation is written for Mintlify and can be used as an internal implementation guide for configuring and embedding the Universal Dynamic Form.
+</Note>
+
+---
+
+## System pieces
+
+The Universal Dynamic Form setup has two main pieces.
+
+| Piece | Purpose |
+| --- | --- |
+| **Form Generator** | Internal configuration UI used to build a direct form URL or iframe embed code. |
+| **Universal Dynamic Form** | Customer-facing form that reads URL parameters, displays the configured fields/styles, and submits the lead payload to the webhook. |
+
+The generator builds a URL like this:
+
+```txt
+https://gmg-digital.vercel.app/forms/dynamic/universal?title=Start+Here&routingMode=adf&dealershipName=Garber+Ford&crmEmail=internetleads%40drive.garberautomall.com
+```
+
+The Universal Dynamic Form then reads those URL parameters and uses them to control:
+
+- Form title
+- Button label, color, and radius
+- Title styling
+- Dealership name
+- CRM email destination
+- Routing mode
+- Lead source name
+- Lead comment template
+- Vehicle make/model/status metadata
+- Optional visible make/model fields
+- Service lead designation
+- Disclaimer text
+- Message field visibility
+- Custom email recipients
+
+---
+
+## Base URL
+
+Use this base URL for generated forms:
+
+```txt
+https://gmg-digital.vercel.app/forms/dynamic/universal
+```
+
+All configuration is passed through query string parameters.
+
+<Warning>
+  Do not manually publish real webhook URLs in public-facing documentation. Use the generator/admin workflow to set the webhook, or document it as an internal placeholder such as `WEBHOOK_URL`.
+</Warning>
+
+---
+
+## Standard embed code
+
+Use the iframe embed when placing the form inside a dealership website page.
+
+```html
+<!-- Center-aligned GMG Universal Form -->
+<section style="padding:20px 0;">
+  <div style="max-width:600px; margin:0 auto;">
+    <iframe
+      id="universalGMGForm"
+      src="FORM_URL_HERE"
+      style="border:none; width:100%; height:800px; overflow:hidden;"
+      scrolling="no"
+    ></iframe>
+  </div>
+</section>
+<script src="https://assets.garberauto.com/assets/forms/resizer.js"></script>
+```
+
+The generator can output three alignment options:
+
+| Alignment | Wrapper style |
+| --- | --- |
+| Left | `margin-left:0;` |
+| Center | `margin:0 auto;` |
+| Right | `margin-left:auto; margin-right:0; text-align:right;` |
+
+<Note>
+  The iframe starts at `height:800px`, then the embedded form posts its height to the parent page using `postMessage`. The external `resizer.js` script is expected to listen for that message and resize the iframe.
+</Note>
+
+---
+
+## Required customer-facing fields
+
+The form always asks for these required customer fields:
+
+| Field | Form input name | Required |
+| --- | --- | --- |
+| First Name | `firstName` | Yes |
+| Last Name | `lastName` | Yes |
+| Phone | `phone` | Yes |
+| Email | `email` | Yes |
+
+The message field is visible by default, but can be hidden with `hideMessage=true`.
+
+Optional vehicle fields can be shown with `showVehicleFields=true`.
+
+---
+
+## URL parameter reference
+
+### Core configuration
+
+| Parameter | Example | Default | Description |
+| --- | --- | --- | --- |
+| `webhook` | `WEBHOOK_URL` | App default webhook | Webhook endpoint that receives the JSON payload. Usually admin-managed. |
+| `title` | `Start Here` | `Contact Us` | Customer-facing form heading. |
+| `hideMessage` | `true` | `false` | Hides the optional message textarea when set to `true`. |
+| `disclaimer` | `By submitting...` | Empty on form / generator default available | Legal or TCPA disclaimer text shown below the submit button. |
+| `ctaLabel` | `Get Started` | `Submit` | Submit button text. |
+
+### Button styling
+
+| Parameter | Example | Default | Description |
+| --- | --- | --- | --- |
+| `btnColor` | `#072a60` | `#072a60` | Submit button background color. |
+| `btnRadius` | `6px` | `6px` | Submit button border radius. Accepts CSS values like `6px`, `12px`, or `999px`. |
+
+### Title styling
+
+| Parameter | Example | Default | Description |
+| --- | --- | --- | --- |
+| `titleColor` | `#072a60` | `#072a60` | Heading text color. |
+| `titleFont` | `Arial, sans-serif` | Browser/theme default | Optional heading font family. |
+| `titleSize` | `28px` | `28px` | Heading font size. |
+| `titleWeight` | `800` | `800` | Heading font weight. |
+| `titleLineHeight` | `0.9em` | `0.9em` | Heading line height. |
+
+### Dealership and lead metadata
+
+| Parameter | Example | Default | Description |
+| --- | --- | --- | --- |
+| `dealershipName` | `Garber Ford` | Empty | Dealership display name and payload metadata. |
+| `crmEmail` | `internetleads@drive.garberautomall.com` | Empty | CRM ADF/XML destination email. |
+| `leadSourceName` | `Website - Test Drive` | Empty | Lead source value sent in the payload. |
+| `leadSource` | `Website Lead` | Empty | Legacy fallback accepted by the form if `leadSourceName` is not present. |
+| `vehicleStatus` | `new` | `new` | Vehicle status metadata. |
+| `status` | `used` | `new` | Legacy fallback accepted by the form if `vehicleStatus` is not present. |
+| `make` | `Chevrolet` | Empty | Vehicle make metadata or default for visible make field. |
+| `model` | `Silverado` | Empty | Vehicle model metadata or default for visible model field. |
+| `showVehicleFields` | `true` | `false` | Shows optional Make and Model inputs on the form. Customer-entered values override URL defaults. |
+| `serviceLead` | `true` | `false` | Flags the submission as a service lead. |
+
+### Routing
+
+| Parameter | Example | Default | Description |
+| --- | --- | --- | --- |
+| `routingMode` | `adf` | `adf` unless custom email legacy params are present | Controls lead delivery behavior. Valid values: `adf`, `email`, `both`. |
+| `customEmail1` | `manager@example.com` | Empty | First custom email destination. |
+| `customEmail2` | `bdc@example.com` | Empty | Second custom email destination. |
+| `customEmail3` | `sales@example.com` | Empty | Third custom email destination. |
+| `customEmail4` | `service@example.com` | Empty | Fourth custom email destination. |
+| `customEmail5` | `director@example.com` | Empty | Fifth custom email destination. |
+
+<Note>
+  The generator limits custom email destinations to five addresses.
+</Note>
+
+### Lead comment template
+
+| Parameter | Example | Description |
+| --- | --- | --- |
+| `leadCommentTemplate` | `{{firstName}} {{lastName}} requested service at {{dealershipName}}.` | Template string rendered on submit into `leadComment`. |
+
+Supported variables:
+
+| Variable | Replaced with |
+| --- | --- |
+| `{{firstName}}` | Customer first name |
+| `{{lastName}}` | Customer last name |
+| `{{email}}` | Customer email |
+| `{{phone}}` | Customer phone |
+| `{{dealershipName}}` | Configured dealership name |
+| `{{make}}` | Effective vehicle make |
+| `{{model}}` | Effective vehicle model |
+| `{{vehicleStatus}}` | Configured vehicle status |
+
+---
+
+## Routing modes
+
+### ADF/XML only
+
+Use this when the lead should only go to the CRM.
+
+```txt
+routingMode=adf
+```
+
+Behavior:
+
+- `sendAdf` is `true`
+- `sendCustomEmail` is `false`
+- Custom email parameters are not needed
+- Payload includes CRM metadata such as `crmEmail`, `leadSourceName`, and `leadComment`
+
+Example:
+
+```txt
+https://gmg-digital.vercel.app/forms/dynamic/universal?title=Start+Here&routingMode=adf&dealershipName=Garber+Ford&crmEmail=internetleads%40drive.garberautomall.com&leadSourceName=Website+Lead
+```
+
+---
+
+### Custom email only
+
+Use this when the lead should send as an HTML email to one or more custom inboxes.
+
+```txt
+routingMode=email&customEmail1=manager@example.com
+```
+
+Behavior:
+
+- `sendAdf` is `false`
+- `sendCustomEmail` is `true` when at least one custom email exists
+- `customEmail` legacy flag is set to `yes`
+- `customEmailCount` equals the number of custom email addresses
+
+Example:
+
+```txt
+https://gmg-digital.vercel.app/forms/dynamic/universal?title=Contact+Us&routingMode=email&customEmail1=manager%40example.com&customEmail2=bdc%40example.com
+```
+
+<Warning>
+  If `routingMode=email` is selected but no custom email addresses are present, the form uses a safety fallback and sends as ADF/XML instead so the lead does not route nowhere.
+</Warning>
+
+---
+
+### Both CRM and custom email
+
+Use this when the lead should go to the CRM and also send to one or more custom email addresses.
+
+```txt
+routingMode=both&customEmail1=manager@example.com
+```
+
+Behavior:
+
+- `sendAdf` is `true`
+- `sendCustomEmail` is `true` when at least one custom email exists
+- `customEmail` legacy flag is set to `yes`
+- CRM routing remains active
+
+Example:
+
+```txt
+https://gmg-digital.vercel.app/forms/dynamic/universal?title=Schedule+Service&routingMode=both&serviceLead=true&dealershipName=Garber+Buick+GMC&crmEmail=leads%40drive.garberbuickgmc.com&customEmail1=service%40example.com
+```
+
+---
+
+## Service lead behavior
+
+Set this parameter for service requests:
+
+```txt
+serviceLead=true
+```
+
+When enabled, the submitted payload includes:
+
+```json
+{
+  "serviceLead": "yes",
+  "isServiceLead": true
+}
+```
+
+Use this for:
+
+- Service specials
+- Oil change campaigns
+- Service appointment requests
+- Fixed ops landing pages
+- Any form that should be handled by service routing downstream
+
+<Note>
+  The generator automatically turns on service lead mode when loading the built-in `Service Request` or `DDC - Service Special` comment templates.
+</Note>
+
+---
+
+## Optional vehicle fields
+
+By default, `make` and `model` are passed as hidden URL-level metadata.
+
+To allow the customer to enter or override vehicle interest on the form, add:
+
+```txt
+showVehicleFields=true
+```
+
+When enabled, the form displays a **Vehicle Interest** section with:
+
+- Make
+- Model
+
+Customer-entered values override the URL-level defaults in the final payload.
+
+For example, if the URL contains:
+
+```txt
+make=Chevrolet&model=Silverado
+```
+
+but the customer enters:
+
+```txt
+Make: GMC
+Model: Sierra
+```
+
+then the payload will use:
+
+```json
+{
+  "make": "GMC",
+  "model": "Sierra"
+}
+```
+
+---
+
+## Lead comment templates
+
+The generator includes quick-load templates that populate `leadSourceName` and `leadCommentTemplate`.
+
+| Template | Lead source | Comment template |
+| --- | --- | --- |
+| Custom | Empty | Empty |
+| Standard / Generic | `Website Lead` | `{{firstName}} {{lastName}} is interested in a {{vehicleStatus}} {{make}} {{model}}.` |
+| DDC - Pre-Order | `DDC - Preorder` | `{{firstName}} {{lastName}} was on our dealership website's pre-order page for the {{make}} {{model}} and completed the pre-order form.` |
+| Test Drive Request | `Website - Test Drive` | `Customer {{firstName}} {{lastName}} requested a test drive for the {{make}} {{model}}.` |
+| Trade-In Inquiry | `Website - Trade In` | `{{firstName}} {{lastName}} is looking to trade in their vehicle towards a {{make}} {{model}}.` |
+| Service Request | `Website - Service` | `{{firstName}} {{lastName}} requested service at {{dealershipName}}.` |
+| DDC - Service Special | `DDC - Service Special` | Service-special-specific comment with phone, email, lead path, and landing page placeholder. |
+
+Template rendering happens at submission time. The rendered value is sent as `leadComment`, while the original template is also sent as `leadCommentTemplate`.
+
+---
+
+## Submitted payload
+
+On submit, the Universal Dynamic Form sends a JSON payload to the configured webhook.
+
+### Main customer fields
+
+```json
+{
+  "firstName": "Chris",
+  "lastName": "Little",
+  "email": "chris@example.com",
+  "phone": "989-555-1234",
+  "message": "I would like more information."
+}
+```
+
+### Metadata fields
+
+```json
+{
+  "dealershipName": "Garber Ford",
+  "make": "Ford",
+  "model": "F-150",
+  "crmEmail": "internetleads@drive.garberautomall.com",
+  "leadSourceName": "Website Lead",
+  "vehicleStatus": "new",
+  "formTitle": "Start Here",
+  "disclaimer": "By submitting my contact information...",
+  "ctaLabel": "Submit",
+  "btnColor": "#072a60",
+  "btnRadius": "6px",
+  "submittedAt": "2026-06-29T00:00:00.000Z",
+  "pageUrl": "https://gmg-digital.vercel.app/forms/dynamic/universal?..."
+}
+```
+
+### Lead comment fields
+
+```json
+{
+  "leadCommentTemplate": "{{firstName}} {{lastName}} is interested in a {{vehicleStatus}} {{make}} {{model}}.",
+  "leadComment": "Chris Little is interested in a new Ford F-150."
+}
+```
+
+### Service lead fields
+
+```json
+{
+  "serviceLead": "yes",
+  "isServiceLead": true
+}
+```
+
+When service lead mode is not enabled:
+
+```json
+{
+  "serviceLead": "",
+  "isServiceLead": false
+}
+```
+
+### Routing fields
+
+```json
+{
+  "routingMode": "both",
+  "sendAdf": true,
+  "sendCustomEmail": true,
+  "customEmail1": "manager@example.com",
+  "customEmail2": "bdc@example.com",
+  "customEmailCount": 2,
+  "customEmail": "yes"
+}
+```
+
+<Note>
+  `customEmail` is a legacy compatibility flag used to trigger the Make.com HTML-email branch. New logic should rely on `sendCustomEmail`, `sendAdf`, and `routingMode`.
+</Note>
+
+---
+
+## Spam protection
+
+The form includes simple 5-minute duplicate submission protection using browser storage.
+
+It checks:
+
+- `localStorage.lastSubmissionTime`
+- `sessionStorage.lastSubmissionTime`
+
+If the customer submits again within 5 minutes, the form displays:
+
+```txt
+You've already submitted a request recently.
+```
+
+This protection is client-side only. It helps reduce accidental duplicate submissions but should not be treated as server-side spam prevention.
+
+---
+
+## Success and error handling
+
+When the webhook responds successfully, the form:
+
+1. Shows a success dialog
+2. Clears the form fields
+3. Saves the current timestamp in local/session storage
+4. Auto-closes the dialog after 6 seconds
+
+Success message:
+
+```txt
+Your request has been submitted successfully.
+```
+
+If the webhook is missing or the request fails, the form shows:
+
+```txt
+There was a problem submitting your request. Please try again.
+```
+
+---
+
+## Disclaimer behavior
+
+The disclaimer is passed with the `disclaimer` URL parameter and displayed below the submit button.
+
+Generator default:
+
+```txt
+By submitting my contact information, I agree to receive communications from {{dealershipName}}, including calls and text messages (via automation). Opt-out anytime by texting "STOP" or reply HELP for additional messaging help. Message and data rates may apply. Message frequency may vary. I acknowledge the [Terms of Service](/terms-of-service.htm) and [Privacy Policy](/privacy.htm). Consent not required for purchase.
+```
+
+The generator notes that the disclaimer supports:
+
+- `{{dealershipName}}`
+- Markdown-style links like `[Terms of Service](/terms-of-service.htm)`
+
+<Warning>
+  Confirm that the live form renders markdown links as expected before relying on clickable disclaimer links. The attached form displays the disclaimer text directly in a paragraph; if markdown link rendering is required, add a markdown renderer or link parser to the form component.
+</Warning>
+
+---
+
+## Generator workflow
+
+<Steps>
+  <Step title="Select the dealership">
+    Choose the dealership from the generator dropdown. This auto-fills the dealership name and CRM ADF/XML email destination.
+  </Step>
+  <Step title="Choose routing mode">
+    Select `ADF/XML Only`, `Custom Email Only`, or `Both` depending on where the lead should go.
+  </Step>
+  <Step title="Add custom email destinations if needed">
+    For `email` or `both` routing, add up to five custom email addresses.
+  </Step>
+  <Step title="Configure vehicle and lead context">
+    Add make, model, vehicle status, lead source name, and an optional lead comment template.
+  </Step>
+  <Step title="Mark service leads if needed">
+    Enable `serviceLead=true` for service requests or fixed ops campaigns.
+  </Step>
+  <Step title="Customize design settings">
+    Update title styling, button label, button color, button radius, disclaimer, and message field visibility.
+  </Step>
+  <Step title="Copy the generated output">
+    Use either the direct link or one of the generated iframe embed snippets.
+  </Step>
+</Steps>
+
+---
+
+## Example configurations
+
+### Standard sales lead
+
+```txt
+https://gmg-digital.vercel.app/forms/dynamic/universal?title=Start+Here&routingMode=adf&dealershipName=Garber+Ford&crmEmail=internetleads%40drive.garberautomall.com&leadSourceName=Website+Lead&vehicleStatus=new&make=Ford&model=F-150&ctaLabel=Submit&btnColor=%23072a60&btnRadius=6px
+```
+
+### Test drive request
+
+```txt
+https://gmg-digital.vercel.app/forms/dynamic/universal?title=Schedule+a+Test+Drive&routingMode=adf&dealershipName=Garber+Honda&crmEmail=leads-roc%40drive.garberroc.com&leadSourceName=Website+-+Test+Drive&leadCommentTemplate=Customer+%7B%7BfirstName%7D%7D+%7B%7BlastName%7D%7D+requested+a+test+drive+for+the+%7B%7Bmake%7D%7D+%7B%7Bmodel%7D%7D.&vehicleStatus=new&make=Honda&model=CR-V
+```
+
+### Service special lead
+
+```txt
+https://gmg-digital.vercel.app/forms/dynamic/universal?title=Schedule+Service&routingMode=both&serviceLead=true&dealershipName=Nissan+of+Bradenton&crmEmail=leads%40drive.nissanofbradenton.com&customEmail1=service%40example.com&leadSourceName=DDC+-+Service+Special&hideMessage=true&ctaLabel=Schedule+Service&btnColor=%23072a60
+```
+
+### Custom email only campaign
+
+```txt
+https://gmg-digital.vercel.app/forms/dynamic/universal?title=Request+More+Info&routingMode=email&customEmail1=manager%40example.com&customEmail2=bdc%40example.com&dealershipName=Garber+Buick+GMC&ctaLabel=Send+Request
+```
+
+---
+
+## Implementation checklist
+
+Before publishing a Universal Dynamic Form embed, confirm the following:
+
+- The generated URL loads correctly in a browser.
+- The dealership name is correct.
+- The CRM email destination is correct.
+- The routing mode is correct.
+- Custom email addresses are present when using `email` or `both` routing.
+- Service lead mode is enabled for service forms.
+- The lead source name is accurate.
+- The lead comment template renders correctly after submission.
+- The disclaimer is correct for the dealership/program.
+- The iframe is using the resizer script.
+- The page works on desktop and mobile.
+- A test submission reaches the expected destination(s).
+
+---
+
+## Troubleshooting
+
+### The form submits to the CRM even though email-only mode was selected
+
+Check whether at least one `customEmailN` parameter is present. If `routingMode=email` has no custom email addresses, the form falls back to ADF/XML so the lead does not route nowhere.
+
+### The custom email branch is not firing
+
+Confirm the payload contains:
+
+```json
+{
+  "sendCustomEmail": true,
+  "customEmail": "yes",
+  "customEmailCount": 1
+}
+```
+
+Also confirm that the URL includes:
+
+```txt
+routingMode=email
+```
+
+or:
+
+```txt
+routingMode=both
+```
+
+with at least one `customEmailN` value.
+
+### The lead is not marked as service
+
+Confirm the URL contains:
+
+```txt
+serviceLead=true
+```
+
+The payload should include:
+
+```json
+{
+  "serviceLead": "yes",
+  "isServiceLead": true
+}
+```
+
+### The make/model values are not what was expected
+
+If `showVehicleFields=true`, customer-entered Make and Model values override URL-level defaults. Check the submitted payload for the final `make` and `model` values.
+
+### The iframe height is wrong
+
+Confirm the embed includes:
+
+```html
+<script src="https://assets.garberauto.com/assets/forms/resizer.js"></script>
+```
+
+The form posts its current `document.body.scrollHeight` to the parent window using:
+
+```js
+window.parent.postMessage({ type: 'setHeight', height: bodyHeight }, '*')
+```
+
+The parent page needs the resizer script to listen for that message and update the iframe height.
+
+### Disclaimer links are not clickable
+
+The generator mentions markdown-style disclaimer links, but the current customer-facing form outputs the disclaimer as plain text inside a paragraph. Add markdown/link rendering if clickable disclaimer links are required.
+
+---
+
+## Notes for developers
+
+- The form uses `useSearchParams()` to read all configuration from the URL.
+- The form uses `fetch()` with a JSON body to submit to the configured webhook.
+- The template renderer replaces `{{key}}` placeholders using a simple regular expression.
+- Explicit `routingMode` wins over legacy behavior.
+- If no explicit routing mode is present, legacy behavior resolves to `email` when custom email params exist; otherwise it resolves to `adf`.
+- `routingMode` should always be emitted by the generator so the form is never ambiguous.
+- The generator only emits `customEmailN` parameters when the selected routing mode is `email` or `both`.
+- The generator supports admin-only fields through the `#admin` URL hash.
+- The customer-facing form has client-side spam protection, but server-side protection should still be handled downstream if needed.
+
+---
+
+## Parameter quick reference
+
+```txt
+webhook
+ title
+ hideMessage
+ disclaimer
+ ctaLabel
+ btnColor
+ btnRadius
+ titleColor
+ titleFont
+ titleSize
+ titleWeight
+ titleLineHeight
+ dealershipName
+ make
+ model
+ crmEmail
+ leadSourceName
+ leadSource
+ vehicleStatus
+ status
+ leadCommentTemplate
+ showVehicleFields
+ serviceLead
+ routingMode
+ customEmail1
+ customEmail2
+ customEmail3
+ customEmail4
+ customEmail5
+```
+
+---
+
+## Recommended defaults
+
+```txt
+title=Start Here
+routingMode=adf
+vehicleStatus=new
+ctaLabel=Submit
+btnColor=#072a60
+btnRadius=6px
+titleColor=#072a60
+titleSize=28px
+titleWeight=800
+titleLineHeight=0.9em
+hideMessage=false
+showVehicleFields=false
+serviceLead=false
+```
+
+---
+
+## Safe publishing notes
+
+<Warning>
+  Review every generated URL before publishing. Query parameters can expose routing destinations, custom email addresses, and webhook configuration if included directly in the page source.
+</Warning>
+
+For public website usage:
+
+- Prefer generator-approved URLs.
+- Avoid exposing real webhook URLs when possible.
+- Confirm dealership-specific TCPA/disclaimer language.
+- Use URL encoding for special characters.
+- Test the final embedded form, not just the direct link.

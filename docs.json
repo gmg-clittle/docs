@@ -40,6 +40,12 @@
         "pages": [
           "documentation"
         ]
+      },
+      {
+        "group": "Forms",
+        "pages": [
+          "universal-dynamic-form"
+        ]
       }
     ]
   },
